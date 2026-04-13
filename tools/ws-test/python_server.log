@@ -1,0 +1,4 @@
+[python-ws] listening at ws://127.0.0.1:8000/ws/inference
+[python-ws] connected
+[python-ws] binary received: 16 bytes
+[python-ws] text sent: {"type": "inference", "status": "ok", "bytes": 16}
