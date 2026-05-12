@@ -35,9 +35,6 @@ public class Highlight {
     @Column(name = "issue_type", nullable = false)
     private String issueType;
 
-    @Column(nullable = false)
-    private String problem;
-
-    @Column(nullable = false)
-    private String improved;
+    @Column(nullable = false, length = 500)
+    private String message;
 }

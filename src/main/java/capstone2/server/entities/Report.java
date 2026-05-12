@@ -23,6 +23,6 @@ public class Report {
     @JoinColumn(name = "run_id", referencedColumnName = "id", nullable = false)
     private RunSession runSession;
 
-    @Column(name = "total_feedback")
+    @Column(name = "total_feedback", columnDefinition = "TEXT")
     private String totalFeedback;
 }

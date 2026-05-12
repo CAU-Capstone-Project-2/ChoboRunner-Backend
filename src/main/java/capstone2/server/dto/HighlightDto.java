@@ -16,6 +16,5 @@ public class HighlightDto {
     private LocalTime startTime;
     private LocalTime endTime;
     private String issueType;
-    private String problem;
-    private String improved;
+    private String message;
 }

@@ -1,12 +1,14 @@
-// File: `src/main/java/capstone2/server/services/UserService.java`
 package capstone2.server.services;
 
 import capstone2.server.dto.UserDto;
 import capstone2.server.entities.User;
 import capstone2.server.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -14,18 +16,18 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @Transactional
 public class UserService {
+    private static final PasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+
     private final UserRepository repo;
 
-    public User create(User u){ return repo.save(u); }
     public UserDto create(UserDto dto){
         User user = User.builder()
-                .id(dto.getId())
                 .username(dto.getUsername())
                 .age(dto.getAge())
                 .goal(dto.getGoal())
                 .height(dto.getHeight())
                 .description(dto.getDescription())
-                .password(dto.getPassword())
+                .password(PASSWORD_ENCODER.encode(dto.getPassword()))
                 .runningLevel(dto.getRunningLevel())
                 .build();
         return toDto(repo.save(user));
@@ -39,7 +41,9 @@ public class UserService {
         user.setGoal(dto.getGoal());
         user.setHeight(dto.getHeight());
         user.setDescription(dto.getDescription());
-        user.setPassword(dto.getPassword());
+        if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
+            user.setPassword(PASSWORD_ENCODER.encode(dto.getPassword()));
+        }
         user.setRunningLevel(dto.getRunningLevel());
         return toDto(repo.save(user));
     }
@@ -53,7 +57,6 @@ public class UserService {
                 .goal(user.getGoal())
                 .height(user.getHeight())
                 .description(user.getDescription())
-                .password(user.getPassword())
                 .runningLevel(user.getRunningLevel())
                 .build();
     }

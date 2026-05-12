@@ -23,9 +23,8 @@ public class HighlightService {
                 .runSession(runRepo.findById(dto.getRunId()).orElseThrow())
                 .startTime(dto.getStartTime())
                 .endTime(dto.getEndTime())
-                .problem(dto.getProblem())
-                .improved(dto.getImproved())
                 .issueType(dto.getIssueType())
+                .message(dto.getMessage())
                 .build();
         return toDto(repo.save(h));
     }
@@ -38,8 +37,7 @@ public class HighlightService {
         existing.setStartTime(dto.getStartTime());
         existing.setEndTime(dto.getEndTime());
         existing.setIssueType(dto.getIssueType());
-        existing.setProblem(dto.getProblem());
-        existing.setImproved(dto.getImproved());
+        existing.setMessage(dto.getMessage());
         return toDto(repo.save(existing));
     }
     public void delete(Long id){ repo.deleteById(id); }
@@ -51,8 +49,7 @@ public class HighlightService {
                 .startTime(h.getStartTime())
                 .endTime(h.getEndTime())
                 .issueType(h.getIssueType())
-                .problem(h.getProblem())
-                .improved(h.getImproved())
+                .message(h.getMessage())
                 .build();
     }
 }

@@ -1,9 +1,14 @@
 import asyncio
 import argparse
 import io
+import struct
+import time
 from pathlib import Path
 
 import websockets
+
+# Android frame protocol: [8B BE signed long ts_ms (monotonic)][JPEG bytes]
+TIMESTAMP_HEADER_BYTES = 8
 
 try:
     from PIL import Image
@@ -21,7 +26,7 @@ def image_to_binary_payload(file_path: str, compress: bool, jpeg_quality: int, m
 
     payload = path.read_bytes()
     if not payload:
-        raise ValueError("빈 파일은 전송할 수 없습니다.")
+        raise ValueError("빈 파일은' 전송할 수 없습니다.")
 
     # 최소한의 매직 넘버 검사로 이미지 파일 형태를 검증합니다.
     is_png = payload.startswith(b"\x89PNG\r\n\x1a\n")
@@ -72,8 +77,13 @@ async def main(
     )
 
     async with websockets.connect(uri) as websocket:
-        print(f"[client] sending binary from '{image_file}': {len(payload)} bytes")
-        await websocket.send(payload)
+        ts_ms = time.monotonic_ns() // 1_000_000
+        framed = struct.pack(">q", ts_ms) + payload
+        print(
+            f"[client] sending binary from '{image_file}': {len(framed)} bytes "
+            f"(ts_ms={ts_ms}, header={TIMESTAMP_HEADER_BYTES}B, img={len(payload)}B)"
+        )
+        await websocket.send(framed)
 
         response = await asyncio.wait_for(websocket.recv(), timeout=timeout)
         if isinstance(response, bytes):
