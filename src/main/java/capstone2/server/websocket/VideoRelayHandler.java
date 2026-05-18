@@ -1,6 +1,8 @@
 package capstone2.server.websocket;
 
 import capstone2.server.services.HighlightCaptureService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
@@ -23,6 +25,8 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class VideoRelayHandler extends AbstractWebSocketHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(VideoRelayHandler.class);
+
     // Android binary frame format: [8B BE long ts_ms (monotonic, SystemClock.elapsedRealtimeNanos()/1e6)][JPEG bytes]
     private static final int TIMESTAMP_HEADER_BYTES = 8;
 
@@ -32,6 +36,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
     private final Map<String, Long> runIdByAndroidId = new ConcurrentHashMap<>();
     private final int wsMaxMessageSize;
     private final HighlightCaptureService highlightCaptureService;
+
 
     public VideoRelayHandler(
             @Value("${ai-server.ws-url}") String wsUrl,
@@ -47,14 +52,14 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
     public void afterConnectionEstablished(org.springframework.web.socket.WebSocketSession androidSession) {
         androidSession.setBinaryMessageSizeLimit(wsMaxMessageSize);
         androidSession.setTextMessageSizeLimit(wsMaxMessageSize);
-        System.out.println("[ws] Android connected: " + androidSession.getId());
+        log.info("[ws] Android connected: {}", androidSession.getId());
 
         Long runId = extractRunId(androidSession.getUri());
         if (runId != null) {
             runIdByAndroidId.put(androidSession.getId(), runId);
-            System.out.println("[ws] runId=" + runId + " bound to " + androidSession.getId());
+            log.info("[ws] runId={} bound to {}", runId, androidSession.getId());
         } else {
-            System.out.println("[ws] no runId query param; highlight capture disabled for " + androidSession.getId());
+            log.info("[ws] no runId query param; highlight capture disabled for {}", androidSession.getId());
         }
 
         CompletableFuture<WebSocketSession> future = new CompletableFuture<>();
@@ -62,7 +67,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
 
         pythonClient.execute(pythonAiUri, pythonSession -> {
             future.complete(pythonSession);
-            System.out.println("[ws] Python connected for Android: " + androidSession.getId());
+            log.info("[ws] Python connected for Android: {}", androidSession.getId());
 
             return pythonSession.receive()
                 .doOnNext(message -> {
@@ -71,7 +76,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
                             return;
                         }
                         if (message.getType() == WebSocketMessage.Type.TEXT) {
-                            System.out.println("[ws] Python text received: " + androidSession.getId());
+                            log.info("[ws] Python text received: {}", androidSession.getId());
                             String text = message.getPayloadAsText();
                             Long boundRunId = runIdByAndroidId.get(androidSession.getId());
                             if (boundRunId != null) {
@@ -79,35 +84,33 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
                             }
                             androidSession.sendMessage(new TextMessage(text));
                         } else if (message.getType() == WebSocketMessage.Type.BINARY) {
-                            System.out.println("[ws] Python binary received: " + androidSession.getId());
+                            log.info("[ws] Python binary received: {}", androidSession.getId());
                             byte[] payload = new byte[message.getPayload().readableByteCount()];
                             message.getPayload().read(payload);
                             androidSession.sendMessage(new BinaryMessage(payload));
                         }
                     } catch (Exception e) {
-                        System.err.println("Android 전달 에러: " + e.getMessage());
-                        e.printStackTrace();
+                        log.error("Android 전달 에러", e);
                         safeClose(androidSession, CloseStatus.SERVER_ERROR);
                     }
                 })
                 .then();
         }).doOnError(error -> {
             future.completeExceptionally(error);
-            System.err.println("AI 연결 에러: " + error.getMessage());
-            error.printStackTrace();
+            log.error("AI 연결 에러", error);
             safeClose(androidSession, CloseStatus.SERVER_ERROR);
         }).subscribe();
     }
 
     @Override
     protected void handleBinaryMessage(org.springframework.web.socket.WebSocketSession androidSession, BinaryMessage message) {
-        System.out.println("[ws] Android binary received: " + androidSession.getId() + ", bytes=" + message.getPayloadLength());
+        log.info("[ws] Android binary received: {}, bytes={}", androidSession.getId(), message.getPayloadLength());
         forwardBinaryToPython(androidSession, message);
     }
 
     @Override
     protected void handleTextMessage(org.springframework.web.socket.WebSocketSession androidSession, TextMessage message) {
-        System.out.println("[ws] Android text received: " + androidSession.getId());
+        log.info("[ws] Android text received: {}", androidSession.getId());
         forwardTextToPython(androidSession, message);
     }
 
@@ -163,8 +166,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
         try {
             pythonSession = future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Python 세션 준비 실패: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Python 세션 준비 실패", e);
             safeClose(androidSession, CloseStatus.SERVER_ERROR);
             return;
         }
@@ -179,8 +181,8 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
             buffer.get(payload);
 
             if (payload.length < TIMESTAMP_HEADER_BYTES) {
-                System.err.println("[ws] Binary payload too small (need 8B ts header): "
-                        + androidSession.getId() + ", bytes=" + payload.length);
+                log.warn("[ws] Binary payload too small (need 8B ts header): {}, bytes={}",
+                        androidSession.getId(), payload.length);
                 return;
             }
 
@@ -189,11 +191,10 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
             pythonSession.send(
                 Mono.just(pythonSession.binaryMessage(factory -> factory.wrap(payload)))
             ).subscribe();
-            System.out.println("[ws] Forwarded to Python: " + androidSession.getId()
-                    + ", ts_ms=" + captureTsMs
-                    + ", imgBytes=" + (payload.length - TIMESTAMP_HEADER_BYTES));
+            log.info("[ws] Forwarded to Python: {}, ts_ms={}, imgBytes={}",
+                    androidSession.getId(), captureTsMs, payload.length - TIMESTAMP_HEADER_BYTES);
         } catch (Exception e) {
-            System.err.println("Python 전달 에러: " + e.getMessage());
+            log.error("Python 전달 에러", e);
             safeClose(androidSession, CloseStatus.SERVER_ERROR);
             safeCloseReactive(pythonSession, CloseStatus.SERVER_ERROR);
         }
@@ -210,8 +211,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
         try {
             pythonSession = future.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
-            System.err.println("Python 세션 준비 실패: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Python 세션 준비 실패", e);
             safeClose(androidSession, CloseStatus.SERVER_ERROR);
             return;
         }
@@ -224,9 +224,9 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
             pythonSession.send(
                 Mono.just(pythonSession.textMessage(message.getPayload()))
             ).subscribe();
-            System.out.println("[ws] Forwarded to Python: " + androidSession.getId());
+            log.info("[ws] Forwarded to Python: {}", androidSession.getId());
         } catch (Exception e) {
-            System.err.println("Python 전달 에러: " + e.getMessage());
+            log.error("Python 전달 에러", e);
             safeClose(androidSession, CloseStatus.SERVER_ERROR);
             safeCloseReactive(pythonSession, CloseStatus.SERVER_ERROR);
         }
