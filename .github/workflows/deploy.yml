@@ -9,7 +9,7 @@ on:
 # 여러 step에서 공통으로 쓸 값
 env:
   # Docker Hub 이미지 이름. 'capstone-server' 부분은 원하는 이름으로 바꿔도 됩니다.
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/capstone-server
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/capstone2-backend
 
 jobs:
   build-and-deploy:
@@ -63,6 +63,6 @@ jobs:
           username: ${{ secrets.EC2_USER }}    # EC2 접속 계정 (예: ubuntu, ec2-user)
           key: ${{ secrets.EC2_SSH_KEY }}      # EC2 접속용 .pem 개인키 내용 전체
           script: |
-            cd ~/app                           # ← scale.sh 가 있는 EC2 디렉토리 경로로 수정하세요
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/capstone-server:latest
+            cd ~/spring                           # ← scale.sh 가 있는 EC2 디렉토리 경로로 수정하세요
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/capstone2-backend:latest
             ./scale.sh 2
