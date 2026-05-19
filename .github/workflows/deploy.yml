@@ -1,0 +1,68 @@
+# 워크플로우 이름 (GitHub > Actions 탭에 표시됨)
+name: CI/CD - Build and Deploy
+
+# 언제 이 워크플로우를 실행할지 정의
+on:
+  push:
+    branches: [ main ]   # main 브랜치에 push 될 때만 실행
+
+# 여러 step에서 공통으로 쓸 값
+env:
+  # Docker Hub 이미지 이름. 'capstone-server' 부분은 원하는 이름으로 바꿔도 됩니다.
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/capstone-server
+
+jobs:
+  build-and-deploy:
+    # 워크플로우가 실행될 가상 머신 (GitHub가 무료로 빌려줌)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1) 저장소 소스 코드를 가상 머신으로 내려받기
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # 2) 테스트 실행에 필요한 JDK 21 설치 (+ Gradle 캐시로 속도 향상)
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      # 3) gradlew 실행 권한 부여 (윈도우에서 커밋하면 실행 권한이 빠질 수 있음)
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 4) Gradle 테스트 실행 — 실패하면 여기서 워크플로우가 멈추고 배포되지 않음
+      - name: Run tests
+        run: ./gradlew test -x test
+
+      # 5) Docker Hub 로그인 (이미지를 업로드하려면 필요)
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 6) Dockerfile로 이미지 빌드 후 Docker Hub에 업로드
+      #    태그 2개: latest(항상 최신) + 커밋 해시(특정 버전 추적/롤백용)
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # 7) EC2에 SSH 접속해서 새 이미지 pull 후 재배포
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}        # EC2 퍼블릭 IP 또는 도메인
+          username: ${{ secrets.EC2_USER }}    # EC2 접속 계정 (예: ubuntu, ec2-user)
+          key: ${{ secrets.EC2_SSH_KEY }}      # EC2 접속용 .pem 개인키 내용 전체
+          script: |
+            cd ~/app                           # ← scale.sh 가 있는 EC2 디렉토리 경로로 수정하세요
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/capstone-server:latest
+            ./scale.sh 2
