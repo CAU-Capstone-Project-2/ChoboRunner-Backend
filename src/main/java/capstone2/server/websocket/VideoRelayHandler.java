@@ -1,6 +1,7 @@
 package capstone2.server.websocket;
 
 import capstone2.server.services.HighlightCaptureService;
+import capstone2.server.services.posture.PostureResultService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -36,16 +37,19 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
     private final Map<String, Long> runIdByAndroidId = new ConcurrentHashMap<>();
     private final int wsMaxMessageSize;
     private final HighlightCaptureService highlightCaptureService;
+    private final PostureResultService postureResultService;
 
 
     public VideoRelayHandler(
             @Value("${ai-server.ws-url}") String wsUrl,
             @Value("${app.websocket.max-message-size-bytes:10485760}") int wsMaxMessageSize,
-            HighlightCaptureService highlightCaptureService
+            HighlightCaptureService highlightCaptureService,
+            PostureResultService postureResultService
     ) {
         this.pythonAiUri = URI.create(wsUrl);
         this.wsMaxMessageSize = wsMaxMessageSize;
         this.highlightCaptureService = highlightCaptureService;
+        this.postureResultService = postureResultService;
     }
 
     @Override
@@ -81,6 +85,7 @@ public class VideoRelayHandler extends AbstractWebSocketHandler {
                             Long boundRunId = runIdByAndroidId.get(androidSession.getId());
                             if (boundRunId != null) {
                                 highlightCaptureService.onMessage(androidSession.getId(), boundRunId, text);
+                                postureResultService.onMessage(boundRunId, text);
                             }
                             androidSession.sendMessage(new TextMessage(text));
                         } else if (message.getType() == WebSocketMessage.Type.BINARY) {

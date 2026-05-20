@@ -1,16 +1,14 @@
 package capstone2.server.services.llm;
 
-import capstone2.server.domain.MetricEvaluation;
 import capstone2.server.dto.PoseAnalysisInput;
+import capstone2.server.services.posture.PostureMetricView;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 public final class PromptBuilder {
 
     public static final String SYSTEM_PROMPT = """
-            역할: 당신은 친근한 러닝 자세 코치다. 측면 영상 분석 데이터를 바탕으로
+            역할: 당신은 친근한 러닝 자세 코치다. 측면 영상 분석 결과를 바탕으로
             자세 개선을 제안한다. 모든 출력은 한국어로 작성한다.
 
             [필수 톤]
@@ -20,11 +18,11 @@ public final class PromptBuilder {
             - 격려하는 톤 유지
 
             [절대 규칙]
-            - verdict를 직접 판정하지 말 것 (Rule이 이미 판정함)
-            - 입력으로 받은 verdict를 신뢰하고 자연어화만 수행
-            - 데이터에 없는 부위(허리, 발목 등)에 대해 추측 금지
-            - UNRELIABLE 지표는 단정 대신 "측면 전신이 잘 보이도록 다시 촬영하면 더
-              정확한 분석이 가능합니다"로 안내
+            - 제공된 AI 피드백 문장(aiFeedback)을 코치 톤으로 자연스럽게 다시 풀어 설명한다
+            - status는 AI/Rule이 이미 정한 값이므로 다시 판정하지 않는다
+            - reasonCodes가 가리키는 측정 한계를 반영하되, 데이터에 없는 부위(허리, 발목 등)는 추측하지 않는다
+            - lowConfidence=true 이면 단정 대신 "측면 전신이 잘 보이도록 다시 촬영하면 더
+              정확한 분석이 가능합니다" 톤으로 안내한다
 
             [출력 형식]
             지정된 JSON 스키마로만 응답한다. 마크다운, 백틱, 추가 설명 금지.
@@ -33,60 +31,60 @@ public final class PromptBuilder {
     private PromptBuilder() {
     }
 
-    public static String buildUserPrompt(List<MetricEvaluation> evals,
-                                         List<PoseAnalysisInput.Metric> metrics) {
-        Map<String, PoseAnalysisInput.Metric> byName = indexByName(metrics);
+    public static String buildUserPrompt(List<PostureMetricView> views, PoseAnalysisInput input) {
+        boolean lowConfidence = "low_confidence".equals(input.status());
         StringBuilder sb = new StringBuilder();
-        sb.append("다음은 러닝 IC 시점의 자세 분석 결과다. AI 측에서 보정된 측정값이며 verdict는 Rule이 산정했다.\n\n");
-        sb.append("[지표별 평가]\n");
+        sb.append("다음은 러닝 측면 영상 자세 분석 결과다.\n\n");
 
-        for (MetricEvaluation e : evals) {
-            sb.append("- ").append(e.metricName()).append(":\n");
-            switch (e.metricName()) {
-                case "trunk_lean", "initial_knee_flexion" -> {
-                    sb.append("  measured: ").append(formatValue(e.rawValue())).append("°\n");
-                    sb.append("  verdict: ").append(e.status()).append("\n");
-                    appendCategory(sb, byName.get(e.metricName()));
-                }
-                case "foot_strike_pattern" -> {
-                    sb.append("  pattern: ").append(e.status()).append(" (experimental, 참고용)\n");
-                    appendCategory(sb, byName.get(e.metricName()));
-                }
-                default -> { /* skip */ }
-            }
+        sb.append("[전체 상태]\n");
+        sb.append("- status: ").append(nullToDash(input.status())).append('\n');
+        sb.append("- lowConfidence: ").append(lowConfidence).append('\n');
+        sb.append("- reasonCodes: ").append(joinReasonCodes(input.reasonCodes())).append('\n');
+        if (input.message() != null && !input.message().isBlank()) {
+            sb.append("- 안내 메시지: ").append(input.message()).append('\n');
         }
 
-        sb.append("\n다음 JSON 스키마로만 응답하라:\n");
+        sb.append("\n[지표별 결과]\n");
+        for (PostureMetricView v : views) {
+            sb.append("- ").append(v.metric().type()).append(":\n");
+            sb.append("  measured: ").append(blankToDash(v.measured()))
+                    .append(isFootStrike(v) ? "" : "°").append('\n');
+            sb.append("  status: ").append(nullToDash(v.status())).append('\n');
+            sb.append("  aiFeedback: ").append(joinAiTexts(v.aiTexts())).append('\n');
+        }
+
         sb.append("""
+
+                다음 JSON 스키마로만 응답하라:
                 {
                   "perMetric": [
-                    { "type": "<metric_name>", "summary": "<1~2문장>", "improved": "<1~2문장>" }
+                    { "type": "<metric_type>", "summary": "<1~2문장 요약>", "improved": "<1~2문장 개선 제안>", "problem": "<짧은 문제 요약>" }
                   ],
-                  "totalFeedback": "<2~3문장>"
+                  "totalFeedback": "<2~3문장 종합 코멘트>"
                 }
                 """);
         return sb.toString();
     }
 
-    private static void appendCategory(StringBuilder sb, PoseAnalysisInput.Metric m) {
-        if (m == null) return;
-        if (m.category() != null && !m.category().isBlank()) {
-            sb.append("  category: ").append(m.category()).append("\n");
-        }
+    private static boolean isFootStrike(PostureMetricView v) {
+        return "foot_strike_pattern".equals(v.metric().type());
     }
 
-    private static String formatValue(Double v) {
-        if (v == null) return "N/A";
-        return String.format("%.2f", v);
+    private static String joinReasonCodes(List<String> codes) {
+        if (codes == null || codes.isEmpty()) return "(없음)";
+        return String.join(", ", codes);
     }
 
-    private static Map<String, PoseAnalysisInput.Metric> indexByName(List<PoseAnalysisInput.Metric> metrics) {
-        if (metrics == null) return Map.of();
-        return Optional.of(metrics).orElse(List.of()).stream()
-                .filter(m -> m != null && m.metricName() != null)
-                .collect(java.util.stream.Collectors.toMap(
-                        PoseAnalysisInput.Metric::metricName,
-                        m -> m,
-                        (a, b) -> a));
+    private static String joinAiTexts(List<String> texts) {
+        if (texts == null || texts.isEmpty()) return "(없음)";
+        return String.join(" / ", texts);
+    }
+
+    private static String nullToDash(String s) {
+        return (s == null || s.isBlank()) ? "-" : s;
+    }
+
+    private static String blankToDash(String s) {
+        return (s == null || s.isBlank()) ? "N/A" : s;
     }
 }

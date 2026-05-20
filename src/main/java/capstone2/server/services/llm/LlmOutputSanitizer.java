@@ -1,7 +1,7 @@
 package capstone2.server.services.llm;
 
-import capstone2.server.domain.MetricEvaluation;
 import capstone2.server.dto.LlmResponseDto;
+import capstone2.server.services.posture.PostureMetricView;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -17,35 +17,51 @@ public class LlmOutputSanitizer {
     private static final int MAX_PER_METRIC_LEN = 200;
     private static final int MAX_TOTAL_FEEDBACK_LEN = 400;
 
-    public LlmResponseDto sanitize(LlmResponseDto raw, List<MetricEvaluation> evals) {
+    /**
+     * LLM 원응답을 검증·보정한다. metric 누락/금칙어/길이 초과 시 fallback 으로 대체하며,
+     * 입력 {@code views} 순서대로 perMetric 을 채워 반환한다.
+     */
+    public LlmResponseDto sanitize(LlmResponseDto raw, List<PostureMetricView> views, boolean lowConfidence) {
         List<LlmResponseDto.PerMetric> resultMetrics = new ArrayList<>();
-        for (MetricEvaluation eval : evals) {
+        for (PostureMetricView view : views) {
             LlmResponseDto.PerMetric llm = (raw == null)
                     ? null
-                    : raw.findByType(eval.metricName()).orElse(null);
-            resultMetrics.add(buildSafeMetric(eval, llm));
+                    : raw.findByType(view.metric().type()).orElse(null);
+            resultMetrics.add(buildSafeMetric(view, llm, lowConfidence));
         }
 
         String totalFeedback = (raw == null) ? null : raw.totalFeedback();
         totalFeedback = sanitizeText(totalFeedback, MAX_TOTAL_FEEDBACK_LEN,
-                FallbackMessages.TOTAL_FEEDBACK_DEFAULT);
+                lowConfidence ? FallbackMessages.LOW_CONFIDENCE_TOTAL_FEEDBACK
+                              : FallbackMessages.TOTAL_FEEDBACK_DEFAULT);
 
         return new LlmResponseDto(resultMetrics, totalFeedback);
     }
 
-    private LlmResponseDto.PerMetric buildSafeMetric(MetricEvaluation eval,
-                                                     LlmResponseDto.PerMetric llm) {
+    private LlmResponseDto.PerMetric buildSafeMetric(PostureMetricView view,
+                                                     LlmResponseDto.PerMetric llm,
+                                                     boolean lowConfidence) {
+        String type = view.metric().type();
+        String status = view.status();
+
         String summary = sanitizeText(
                 llm == null ? null : llm.summary(),
                 MAX_PER_METRIC_LEN,
-                FallbackMessages.summaryOf(eval.metricName(), eval.verdict()));
+                lowConfidence ? FallbackMessages.LOW_CONFIDENCE_SUMMARY
+                              : FallbackMessages.summaryOf(type, status));
 
         String improved = sanitizeText(
                 llm == null ? null : llm.improved(),
                 MAX_PER_METRIC_LEN,
-                FallbackMessages.IMPROVED_DEFAULT);
+                lowConfidence ? FallbackMessages.LOW_CONFIDENCE_IMPROVED
+                              : FallbackMessages.IMPROVED_DEFAULT);
 
-        return new LlmResponseDto.PerMetric(eval.metricName(), summary, improved);
+        String problem = sanitizeText(
+                llm == null ? null : llm.problem(),
+                MAX_PER_METRIC_LEN,
+                FallbackMessages.problemOf(type, status));
+
+        return new LlmResponseDto.PerMetric(type, summary, improved, problem);
     }
 
     private String sanitizeText(String text, int maxLen, String fallback) {

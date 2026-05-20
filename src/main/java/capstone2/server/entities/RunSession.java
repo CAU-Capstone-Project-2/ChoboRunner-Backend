@@ -33,7 +33,9 @@ public class RunSession {
     @Column(nullable = false)
     private String status;
 
-    @Column(name = "video_s3_url", nullable = false)
+    // WS 스트리밍 구조에서는 RunSession 생성 시 원본 영상이 없다.
+    // overlay 영상 생성 후 별도 콜백 API가 overlay URL을 채워 넣는다.
+    @Column(name = "video_s3_url")
     private String videoS3Url;
 
     private Integer duration; // sec

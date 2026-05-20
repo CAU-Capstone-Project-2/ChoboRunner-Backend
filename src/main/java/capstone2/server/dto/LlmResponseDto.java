@@ -12,7 +12,7 @@ public record LlmResponseDto(
 ) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record PerMetric(String type, String summary, String improved) {
+    public record PerMetric(String type, String summary, String improved, String problem) {
     }
 
     public Optional<PerMetric> findByType(String type) {
