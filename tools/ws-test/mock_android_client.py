@@ -1,7 +1,8 @@
 """mock_android_client.py — Android 영상 송신을 모사하는 WebSocket 테스트 클라이언트.
 
-영상 파일을 디코딩해 720p로 리사이즈한 뒤, 각 frame을 `[8B BE ts_ms][JPEG]`
-binary frame으로 설정된 fps에 맞춰 Spring relay(`/ws/chobo-runner`)에 전송한다.
+영상 파일을 디코딩하고(세로 영상은 rotation 메타데이터를 적용해 똑바로 세운다)
+720p로 리사이즈한 뒤, 각 frame을 `[8B BE ts_ms][JPEG]` binary frame으로
+설정된 fps에 맞춰 Spring relay(`/ws/chobo-runner`)에 전송한다.
 전송이 끝나면 `{"type":"stop"}` 제어 메시지를 보내고, 서버가 돌려주는
 응답(text frame)을 출력해 데이터 수신을 검증한다.
 
@@ -32,6 +33,42 @@ SUPPORTED_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 # next()가 generator 소진 시 StopIteration 대신 돌려줄 표식 (to_thread 호환).
 _EXHAUSTED = object()
 
+# 컨테이너 rotation 메타데이터(도) → cv2.rotate 코드.
+_ROTATE_CODES = {
+    90: cv2.ROTATE_90_CLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_COUNTERCLOCKWISE,
+}
+
+
+def _disable_auto_orientation(capture) -> None:
+    """OpenCV 자동 회전을 끈다(빌드별 기본값이 달라 수동 적용으로 통일). 미지원 빌드면 무시."""
+    prop = getattr(cv2, "CAP_PROP_ORIENTATION_AUTO", None)
+    if prop is not None:
+        capture.set(prop, 0)
+
+
+def _frame_rotation(capture) -> int:
+    """컨테이너 rotation 메타데이터(도)를 읽는다. 없거나 미지원이면 0."""
+    prop = getattr(cv2, "CAP_PROP_ORIENTATION_META", None)
+    if prop is None:
+        return 0
+    meta = capture.get(prop)
+    if not meta:
+        return 0
+    return int(round(meta)) % 360
+
+
+def _apply_rotation(frame, rotation: int):
+    """세로 영상 등 rotation 메타데이터가 박힌 frame을 '똑바로 선' 상태로 회전한다.
+
+    WS 스트리밍은 호출 측이 똑바로 선 frame을 보내야 AI 서버의 좌표계(수직축 기준
+    trunk_lean 등)와 정합한다. file mode 분석은 디코더가 자동 회전하지만,
+    cv2.VideoCapture.read()는 rotation 메타데이터를 적용하지 않으므로 직접 회전한다.
+    """
+    code = _ROTATE_CODES.get(rotation)
+    return frame if code is None else cv2.rotate(frame, code)
+
 
 def iter_video_jpeg_frames(video_path: str, target_height: int, send_fps: float,
                            jpeg_quality: int, max_frames: int):
@@ -53,6 +90,10 @@ def iter_video_jpeg_frames(video_path: str, target_height: int, send_fps: float,
     if not capture.isOpened():
         raise RuntimeError(f"영상을 열 수 없습니다(코덱 손상/미지원 확인): {path}")
 
+    # rotation 메타데이터를 수동 적용한다(자동 회전을 끄고 직접 회전 → 결정적 동작).
+    _disable_auto_orientation(capture)
+    rotation = _frame_rotation(capture)
+
     source_fps = capture.get(cv2.CAP_PROP_FPS)
     if not source_fps or source_fps <= 0:
         # 메타데이터가 없는 경우 데시메이션 없이 전 frame 송신.
@@ -62,6 +103,11 @@ def iter_video_jpeg_frames(video_path: str, target_height: int, send_fps: float,
         f"target_fps={send_fps:g} target_height={target_height}p jpeg_q={jpeg_quality}",
         flush=True,
     )
+    if rotation:
+        print(
+            f"[client] rotation metadata={rotation}° → frame에 적용 (세로 영상 보정)",
+            flush=True,
+        )
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
     keep_ratio = min(1.0, send_fps / source_fps)  # 1.0이면 전 frame 송신
@@ -72,6 +118,9 @@ def iter_video_jpeg_frames(video_path: str, target_height: int, send_fps: float,
             ok, frame = capture.read()
             if not ok:
                 break
+
+            if rotation:
+                frame = _apply_rotation(frame, rotation)
 
             # send_fps에 맞춰 frame 솎기: 누산기가 1.0을 넘는 frame만 송신.
             accumulator += keep_ratio

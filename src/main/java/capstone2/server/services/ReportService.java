@@ -26,6 +26,9 @@ public class ReportService {
 
     public Optional<ReportDto> findDtoById(Long id) { return repo.findById(id).map(this::toDto); }
     public List<ReportDto> findAllDto() { return repo.findAll().stream().map(this::toDto).toList(); }
+    public List<ReportDto> findByRunSessionIdDto(Long runSessionId) {
+        return repo.findByRunSessionId(runSessionId).stream().map(this::toDto).toList();
+    }
     public ReportDto update(Long id, ReportDto dto) {
         Report existing = repo.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Report not found: " + id));

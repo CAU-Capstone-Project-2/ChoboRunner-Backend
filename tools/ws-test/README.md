@@ -83,4 +83,5 @@ python -u .\tools\ws-test\mock_android_client.py --uri ws://127.0.0.1:8090/ws/ch
 - 연결 실패면: 방화벽/포트 점유(8000, 8090) 확인
 - `1009 message too big`면: `--height`를 낮추거나 `--jpeg-quality`를 낮춰 frame 크기 축소 (720p JPEG는 보통 수십 KB이므로 드묾)
 - `영상을 열 수 없습니다`면: 코덱 문제 — `opencv-python` 재설치 또는 다른 컨테이너 포맷으로 변환
+- 분석 결과 각도(`trunk_lean_deg` 등)가 ±90° 근처로 비정상이면: 세로(rotation 메타데이터) 영상이 회전 없이 누운 채 전송된 경우다. 클라이언트가 rotation 메타데이터를 읽어 자동 회전하며(`[client] rotation metadata=...°` 로그 출력), 회전이 안 잡히면 `opencv-python` 4.5.2+ 인지 확인한다
 

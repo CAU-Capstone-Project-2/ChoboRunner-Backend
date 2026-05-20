@@ -1,8 +1,8 @@
 package capstone2.server.services.llm;
 
-import capstone2.server.domain.MetricEvaluation;
 import capstone2.server.dto.LlmResponseDto;
 import capstone2.server.dto.PoseAnalysisInput;
+import capstone2.server.services.posture.PostureMetricView;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -68,14 +68,13 @@ public class PostureLlmClient {
         return trimmed.substring(0, 4) + "..." + trimmed.substring(trimmed.length() - 4);
     }
 
-    public LlmResponseDto generate(List<MetricEvaluation> evals,
-                                   List<PoseAnalysisInput.Metric> metrics) {
+    public LlmResponseDto generate(List<PostureMetricView> views, PoseAnalysisInput input) {
         if (!enabled) {
             log.warn("OpenAI API key is not configured. Falling back to default messages.");
             return null;
         }
 
-        String userPrompt = PromptBuilder.buildUserPrompt(evals, metrics);
+        String userPrompt = PromptBuilder.buildUserPrompt(views, input);
 
         Map<String, Object> body = Map.of(
                 "model", model,
