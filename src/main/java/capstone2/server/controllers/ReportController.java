@@ -15,12 +15,13 @@ public class ReportController {
     private final ReportService svc;
 
     @GetMapping
-    public ResponseEntity<List<ReportDto>> all(
-            @RequestParam(value = "runSessionId", required = false) Long runSessionId){
-        if (runSessionId != null) {
-            return ResponseEntity.ok(svc.findByRunSessionIdDto(runSessionId));
-        }
-        return ResponseEntity.ok(svc.findAllDto());
+    public ResponseEntity<List<ReportDto>> all(){ return ResponseEntity.ok(svc.findAllDto()); }
+
+    @GetMapping("/by-run/{runSessionId}")
+    public ResponseEntity<List<ReportDto>> byRun(
+            @PathVariable(value = "runSessionId", required = true) Long runSessionId){
+        return ResponseEntity.ok(svc.findByRunSessionIdDto(runSessionId));
+
     }
 
     @GetMapping("/{id}")
