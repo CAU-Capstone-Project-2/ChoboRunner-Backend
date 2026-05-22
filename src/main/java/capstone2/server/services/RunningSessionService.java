@@ -26,7 +26,7 @@ public class RunningSessionService {
                 .mode(runSessionDto.getMode())
                 .duration(runSessionDto.getDuration())
                 .status(runSessionDto.getStatus())
-                .videoS3Url(runSessionDto.getVideoS3Url())
+                .videoS3Key(runSessionDto.getVideoS3Key())
                 .build();
         return toDto(repo.save(s));
     }
@@ -39,7 +39,7 @@ public class RunningSessionService {
         s.setCreatedDate(dto.getCreatedDate());
         s.setMode(dto.getMode());
         s.setStatus(dto.getStatus());
-        s.setVideoS3Url(dto.getVideoS3Url());
+        s.setVideoS3Key(dto.getVideoS3Key());
         s.setDuration(dto.getDuration());
         return toDto(repo.save(s));
     }
@@ -52,11 +52,18 @@ public class RunningSessionService {
                 .createdDate(s.getCreatedDate())
                 .mode(s.getMode())
                 .status(s.getStatus())
-                .videoS3Url(s.getVideoS3Url())
+                .videoS3Key(s.getVideoS3Key())
                 .duration(s.getDuration())
                 .build();
     }
 
     public Optional<RunSession> findById(Long runId) {
         return repo.findById(runId);}
+
+    /** 오버레이 완료 시 영상 S3 key만 갱신한다 (덮어쓰기). */
+    public RunSessionDto updateVideoS3Key(Long id, String videoS3Key) {
+        RunSession s = repo.findById(id).orElseThrow();
+        s.setVideoS3Key(videoS3Key);
+        return toDto(repo.save(s));
+    }
 }

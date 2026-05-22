@@ -16,6 +16,6 @@ public class RunSessionDto {
     private LocalDateTime createdDate;
     private String mode;
     private String status;
-    private String videoS3Url;
+    private String videoS3Key;
     private Integer duration;
 }

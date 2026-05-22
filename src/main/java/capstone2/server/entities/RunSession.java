@@ -33,10 +33,10 @@ public class RunSession {
     @Column(nullable = false)
     private String status;
 
-    // WS 스트리밍 구조에서는 RunSession 생성 시 원본 영상이 없다.
-    // overlay 영상 생성 후 별도 콜백 API가 overlay URL을 채워 넣는다.
-    @Column(name = "video_s3_url")
-    private String videoS3Url;
+    // RunSession 생성 시점에는 영상이 없다.
+    // 러닝 종료 후 오버레이 합성이 끝나면 최종 영상의 S3 key가 채워진다.
+    @Column(name = "video_s3_key")
+    private String videoS3Key;
 
     private Integer duration; // sec
 }

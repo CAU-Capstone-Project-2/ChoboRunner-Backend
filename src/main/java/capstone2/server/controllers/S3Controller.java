@@ -1,6 +1,7 @@
 package capstone2.server.controllers;
 
 import capstone2.server.dto.S3ObjectLinkDto;
+import capstone2.server.dto.S3PresignedUrlDto;
 import capstone2.server.dto.S3UploadResultDto;
 import capstone2.server.services.S3Service;
 import io.swagger.v3.oas.annotations.Operation;
@@ -128,6 +129,32 @@ public class S3Controller {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", "파일 다운로드에 실패했습니다.", "detail", e.getMessage()));
         }
+    }
+
+    @Operation(summary = "Presigned URL 발급",
+            description = "S3 key에 대해 기간 한정 presigned GET URL을 발급합니다. 기본 유효기간은 1시간(3600초)입니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "발급 성공",
+                    content = @Content(schema = @Schema(implementation = S3PresignedUrlDto.class))),
+            @ApiResponse(responseCode = "400", description = "key 누락 또는 expiresInSeconds 범위 오류")
+    })
+    @GetMapping("/presigned-url")
+    public ResponseEntity<?> presignedUrl(
+            @Parameter(description = "presigned URL을 발급할 S3 객체 key", required = true)
+            @RequestParam("key") String key,
+            @Parameter(description = "URL 유효 기간(초). 기본 3600(1시간), 최대 604800(7일)")
+            @RequestParam(value = "expiresInSeconds", defaultValue = "3600") long expiresInSeconds) {
+        if (key == null || key.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "presigned URL을 발급할 S3 key가 없습니다."));
+        }
+
+        long maxSeconds = 7L * 24 * 60 * 60;
+        if (expiresInSeconds < 1 || expiresInSeconds > maxSeconds) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "expiresInSeconds는 1초 이상 604800초(7일) 이하여야 합니다."));
+        }
+
+        return ResponseEntity.ok(s3Service.presignedGetUrl(key, expiresInSeconds));
     }
 
     @Schema(name = "S3UploadRequest", description = "S3 파일 업로드 요청 본문")
