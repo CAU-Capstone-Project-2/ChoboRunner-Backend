@@ -1,6 +1,7 @@
 // File: `src/main/java/capstone2/server/controllers/UserController.java`
 package capstone2.server.controllers;
 
+import capstone2.server.dto.LoginRequest;
 import capstone2.server.dto.UserDto;
 import capstone2.server.services.UserService;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,13 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserDto> create(@RequestBody UserDto dto){ return ResponseEntity.ok(svc.create(dto)); }
+
+    @PostMapping("/login")
+    public ResponseEntity<UserDto> login(@RequestBody LoginRequest req){
+        return svc.login(req.username(), req.password())
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(401).build());
+    }
 
     @PutMapping("/{id}")
     public ResponseEntity<UserDto> update(@PathVariable Long id, @RequestBody UserDto dto){

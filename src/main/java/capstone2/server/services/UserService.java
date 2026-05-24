@@ -21,6 +21,10 @@ public class UserService {
     private final UserRepository repo;
 
     public UserDto create(UserDto dto){
+        validateRequiredFields(dto, true);
+        if (repo.existsByUsername(dto.getUsername())) {
+            throw new IllegalArgumentException("이미 사용 중인 username 입니다: " + dto.getUsername());
+        }
         User user = User.builder()
                 .username(dto.getUsername())
                 .age(dto.getAge())
@@ -35,7 +39,12 @@ public class UserService {
     public Optional<UserDto> findDtoById(Long id){ return repo.findById(id).map(this::toDto); }
     public List<UserDto> findAllDto(){ return repo.findAll().stream().map(this::toDto).toList(); }
     public UserDto update(Long id, UserDto dto){
+        validateRequiredFields(dto, false);
         User user = repo.findById(id).orElseThrow();
+        if (!user.getUsername().equals(dto.getUsername())
+                && repo.existsByUsername(dto.getUsername())) {
+            throw new IllegalArgumentException("이미 사용 중인 username 입니다: " + dto.getUsername());
+        }
         user.setUsername(dto.getUsername());
         user.setAge(dto.getAge());
         user.setGoal(dto.getGoal());
@@ -48,6 +57,27 @@ public class UserService {
         return toDto(repo.save(user));
     }
     public void delete(Long id){ repo.deleteById(id); }
+
+    public Optional<UserDto> login(String username, String password){
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalArgumentException("username 과 password 는 필수입니다");
+        }
+        return repo.findByUsername(username)
+                .filter(u -> PASSWORD_ENCODER.matches(password, u.getPassword()))
+                .map(this::toDto);
+    }
+
+    private void validateRequiredFields(UserDto dto, boolean requirePassword){
+        if (dto.getUsername() == null || dto.getUsername().isBlank()) {
+            throw new IllegalArgumentException("username 은 필수입니다");
+        }
+        if (requirePassword && (dto.getPassword() == null || dto.getPassword().isBlank())) {
+            throw new IllegalArgumentException("password 는 필수입니다");
+        }
+        if (dto.getRunningLevel() == null || dto.getRunningLevel().isBlank()) {
+            throw new IllegalArgumentException("runningLevel 은 필수입니다");
+        }
+    }
 
     public UserDto toDto(User user){
         return UserDto.builder()
