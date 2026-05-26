@@ -8,6 +8,7 @@ import capstone2.server.repositories.RunSessionRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalTime;
@@ -26,7 +27,13 @@ public class HighlightCaptureService {
 
     private static final String PROGRESS_TYPE = "analysis_progress";
     private static final String WARNING_CATEGORY = "posture_warning";
-    private static final double GAP_THRESHOLD_SEC = 3.0;
+
+    @Value("${posture.highlight.gap-threshold-sec}")
+    private double gapThresholdSec;
+    @Value("${posture.highlight.min-duration-sec}")
+    private double minHighlightSec;
+    @Value("${posture.highlight.start-padding-sec}")
+    private double startPaddingSec;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -104,7 +111,7 @@ public class HighlightCaptureService {
             if (existing == null) {
                 opens.put(metric, new OpenHighlight(runId, metric, text, elapsedSec));
             } else if (existing.message.equals(text)) {
-                existing.lastSeenSec = elapsedSec;
+                existing.lastSeenSec = elapsedSec + minHighlightSec;
             } else {
                 toPersist.add(existing);
                 opens.put(metric, new OpenHighlight(runId, metric, text, elapsedSec));
@@ -115,7 +122,7 @@ public class HighlightCaptureService {
         while (it.hasNext()) {
             Map.Entry<String, OpenHighlight> entry = it.next();
             OpenHighlight open = entry.getValue();
-            if (elapsedSec - open.lastSeenSec > GAP_THRESHOLD_SEC) {
+            if (elapsedSec - open.lastSeenSec > gapThresholdSec) {
                 toPersist.add(open);
                 it.remove();
             }
@@ -136,10 +143,15 @@ public class HighlightCaptureService {
 
     private void persist(RunSession session, OpenHighlight open) {
         try {
+            double effectiveStart = Math.max(0.0, open.startSec - startPaddingSec);
+            double effectiveEnd = open.lastSeenSec;
+            if (open.lastSeenSec - open.startSec < minHighlightSec) {
+                effectiveEnd += minHighlightSec;
+            }
             Highlight h = Highlight.builder()
                     .runSession(session)
-                    .startTime(toLocalTime(open.startSec))
-                    .endTime(toLocalTime(open.lastSeenSec))
+                    .startTime(toLocalTime(effectiveStart))
+                    .endTime(toLocalTime(effectiveEnd))
                     .issueType(open.metric)
                     .message(truncate(open.message, 500))
                     .build();
@@ -148,6 +160,7 @@ public class HighlightCaptureService {
             System.err.println("[highlight] save 실패: " + e.getMessage());
         }
     }
+
 
     private static LocalTime toLocalTime(double seconds) {
         long ms = Math.max(0, Math.round(seconds * 1000.0));
