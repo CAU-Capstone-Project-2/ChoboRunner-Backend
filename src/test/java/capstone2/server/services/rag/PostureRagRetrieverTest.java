@@ -96,7 +96,7 @@ class PostureRagRetrieverTest {
     }
 
     @Test
-    void appliesCoachingToneAndCategoryFilter() {
+    void appliesCategoryFilterOnly() {
         when(pineconeClient.query(any(), anyInt(), any())).thenReturn(List.of());
 
         retriever.retrieve(List.of(view(PostureMetric.TRUNK_LEAN, "주의")), input());
@@ -104,7 +104,7 @@ class PostureRagRetrieverTest {
         ArgumentCaptor<Map<String, Object>> filterCap = ArgumentCaptor.forClass(Map.class);
         verify(pineconeClient).query(any(), anyInt(), filterCap.capture());
         Map<String, Object> filter = filterCap.getValue();
-        assertThat(filter).containsEntry("tone", Map.of("$eq", "coaching"));
+        assertThat(filter).doesNotContainKey("tone");
         assertThat(filter).containsEntry("category",
                 Map.of("$in", List.of("trunk_lean", "general")));
     }

@@ -33,8 +33,8 @@ public class PostureLlmClient {
     private final boolean enabled;
 
     public PostureLlmClient(@Value("${spring.ai.openai.api-key:}") String apiKey,
-                            @Value("${spring.ai.openai.chat.options.model:gpt-4o-mini}") String model,
-                            @Value("${spring.ai.openai.chat.options.temperature:0.3}") double temperature,
+                            @Value("${spring.ai.openai.chat.options.model:gpt-5.5}") String model,
+                            @Value("${spring.ai.openai.chat.options.temperature:1.0}") double temperature,
                             @Value("${posture.llm.timeout-seconds:30}") long timeoutSeconds) {
         String trimmedKey = apiKey == null ? "" : apiKey.trim();
         this.enabled = !trimmedKey.isEmpty() && !trimmedKey.startsWith("${");

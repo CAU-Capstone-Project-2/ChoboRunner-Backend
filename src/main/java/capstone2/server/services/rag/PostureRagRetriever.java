@@ -31,7 +31,6 @@ public class PostureRagRetriever {
     private static final Logger log = LoggerFactory.getLogger(PostureRagRetriever.class);
 
     private static final String GENERAL_CATEGORY = "general";
-    private static final String COACHING_TONE = "coaching";
 
     private final PostureEmbeddingClient embeddingClient;
     private final PineconeClient pineconeClient;
@@ -62,7 +61,8 @@ public class PostureRagRetriever {
             if (!needsRetrieval(view)) {
                 continue;
             }
-            String query = buildQuery(view, input);
+            String query = buildQuery(view);
+            log.debug("RAG query metric={} text={}", view.metric().type(), query);
             float[] vec = embeddingClient.embed(query);
             if (vec == null) {
                 log.debug("RAG: embedding 실패, metric={}", view.metric().type());
@@ -95,32 +95,66 @@ public class PostureRagRetriever {
         return "주의".equals(view.status());
     }
 
-    private String buildQuery(PostureMetricView view, PoseAnalysisInput input) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("러닝 자세: ").append(view.metric().type());
-        if (view.measured() != null && !view.measured().isBlank()) {
-            sb.append(", 측정값=").append(view.measured());
+    /**
+     * 자연어 영어 쿼리. T2 코퍼스 본문이 영어 OA 논문 위주이므로 한국어 키-값 메타 대신
+     * passage 와 같은 언어/문체의 짧은 진술문을 임베딩한다.
+     */
+    private String buildQuery(PostureMetricView view) {
+        String measured = view.measured() == null ? "" : view.measured().trim();
+        return switch (view.metric()) {
+            case TRUNK_LEAN -> buildTrunkLeanQuery(measured);
+            case INITIAL_KNEE_FLEXION -> buildKneeFlexionQuery(measured);
+            case FOOT_STRIKE_PATTERN -> buildFootStrikeQuery(view.status());
+        };
+    }
+
+    private String buildTrunkLeanQuery(String measured) {
+        StringBuilder sb = new StringBuilder(
+                "A distance runner shows excessive forward trunk lean during running");
+        if (!measured.isEmpty()) {
+            sb.append(" with a measured trunk lean angle of ").append(measured).append(" degrees");
         }
-        if (view.status() != null && !view.status().isBlank()) {
-            sb.append(", 상태=").append(view.status());
-        }
-        if (input != null && input.reasonCodes() != null && !input.reasonCodes().isEmpty()) {
-            sb.append(", reasonCodes=").append(String.join(",", input.reasonCodes()));
-        }
-        if (view.aiTexts() != null && !view.aiTexts().isEmpty()) {
-            sb.append(". AI 피드백: ").append(String.join(" / ", view.aiTexts()));
-        }
-        sb.append(". 개선 가이드를 제시.");
+        sb.append(". Discuss the biomechanical effects of forward trunk inclination on running")
+          .append(" economy and injury risk, and provide coaching cues to correct posture.");
         return sb.toString();
     }
 
+    private String buildKneeFlexionQuery(String measured) {
+        StringBuilder sb = new StringBuilder(
+                "A distance runner shows insufficient knee flexion at initial foot contact while running");
+        if (!measured.isEmpty()) {
+            sb.append(" (knee flexion angle of ").append(measured).append(" degrees at landing)");
+        }
+        sb.append(". Explain how limited knee flexion at initial contact affects impact loading")
+          .append(" and provide coaching cues to increase knee flexion during the landing phase.");
+        return sb.toString();
+    }
+
+    private String buildFootStrikeQuery(String pattern) {
+        String descriptor = footStrikeDescriptor(pattern);
+        return "A distance runner exhibits a " + descriptor
+                + " during running. Describe the biomechanical implications of a " + descriptor
+                + " on impact forces, running economy and injury risk, and recommended technique"
+                + " adjustments or coaching cues.";
+    }
+
+    private String footStrikeDescriptor(String pattern) {
+        if (pattern == null) return "particular foot strike pattern";
+        return switch (pattern.trim().toUpperCase()) {
+            case "RFS" -> "rearfoot strike (heel strike) pattern";
+            case "MFS" -> "midfoot strike pattern";
+            case "FFS" -> "forefoot strike pattern";
+            default -> pattern + " foot strike pattern";
+        };
+    }
+
     /**
-     * metadata filter: tone=coaching + (category=metric.type OR category=general).
-     * Pinecone metadata filter 문법: {@code {"$or":[{"category":{"$eq":"trunk_lean"}}, ...]}}.
+     * metadata filter: category=metric.type OR category=general.
+     * tone(coaching/clinical) 필터는 제거 — 휴리스틱이 과도하게 clinical 분류해서
+     * 실제 코칭에 유용한 러닝 바이오메카닉 본문(injury/pain 단어 포함) 다수가 누락됨.
      */
     private Map<String, Object> buildFilter(PostureMetric metric) {
         Map<String, Object> filter = new LinkedHashMap<>();
-        filter.put("tone", Map.of("$eq", COACHING_TONE));
         filter.put("category", Map.of("$in", List.of(metric.type(), GENERAL_CATEGORY)));
         return filter;
     }

@@ -19,6 +19,7 @@ from typing import Iterable
 from pypdf import PdfReader
 
 from .chunk import Chunk, chunk_text
+from .classify import classify_chunk
 from .embed import embed_batch
 from .upsert import DEFAULT_NAMESPACE, reset_namespace, upsert
 
@@ -45,6 +46,9 @@ def _vector_id(doc_id: str, chunk_index: int) -> str:
 
 def _build_vector(doc_id: str, chunk: Chunk, base_meta: dict, embedding: list[float]) -> dict:
     meta = {**base_meta, "tone": chunk.tone, "text": chunk.text}
+    # 청크별 분류 결과가 있으면 paper-level category 를 덮어쓴다.
+    if chunk.category:
+        meta["category"] = chunk.category
     meta = {k: v for k, v in meta.items() if v is not None}
     return {
         "id": _vector_id(doc_id, chunk.index),
@@ -92,20 +96,38 @@ def iter_t2_docs() -> Iterable[tuple[str, str, dict]]:
         yield meta["doc_id"], text, meta
 
 
-def process(docs: Iterable[tuple[str, str, dict]], namespace: str) -> int:
+def process(docs: Iterable[tuple[str, str, dict]], namespace: str, classify: bool) -> int:
     total_chunks = 0
+    total_dropped = 0
     for doc_id, text, base_meta in docs:
         chunks = chunk_text(text)
         if not chunks:
             log.warning("chunk 0 — skip doc=%s", doc_id)
             continue
+
+        if classify:
+            kept: list[Chunk] = []
+            for c in chunks:
+                label = classify_chunk(c.text)
+                if label == "drop":
+                    total_dropped += 1
+                    continue
+                c.category = label
+                kept.append(c)
+            if not kept:
+                log.info("doc=%s 모든 청크 drop — skip", doc_id)
+                continue
+            chunks = kept
+
         embeddings = embed_batch([c.text for c in chunks])
         vectors = [
             _build_vector(doc_id, c, base_meta, emb) for c, emb in zip(chunks, embeddings)
         ]
         upserted = upsert(vectors, namespace=namespace)
-        log.info("doc=%s chunks=%d upserted=%d", doc_id, len(chunks), upserted)
+        log.info("doc=%s kept=%d upserted=%d", doc_id, len(chunks), upserted)
         total_chunks += upserted
+    if classify:
+        log.info("classify: dropped(irrelevant) 청크 합계=%d", total_dropped)
     return total_chunks
 
 
@@ -115,6 +137,8 @@ def main() -> None:
     parser.add_argument("--namespace", default=DEFAULT_NAMESPACE)
     parser.add_argument("--reset", action="store_true",
                         help="upsert 전에 namespace 의 기존 벡터를 모두 삭제")
+    parser.add_argument("--classify", action="store_true",
+                        help="청크별 LLM 분류로 category 를 재라벨링하고 무관 청크 drop")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(
@@ -129,10 +153,10 @@ def main() -> None:
     total = 0
     if args.tier in {"t1", "all"}:
         log.info("=== T1 처리 시작 ===")
-        total += process(iter_t1_docs(), args.namespace)
+        total += process(iter_t1_docs(), args.namespace, classify=args.classify)
     if args.tier in {"t2", "all"}:
         log.info("=== T2 처리 시작 ===")
-        total += process(iter_t2_docs(), args.namespace)
+        total += process(iter_t2_docs(), args.namespace, classify=args.classify)
     log.info("완료. 총 upsert 벡터 수=%d", total)
 
 

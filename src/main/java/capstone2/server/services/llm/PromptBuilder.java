@@ -37,7 +37,7 @@ public final class PromptBuilder {
             지정된 JSON 스키마로만 응답한다. 마크다운, 백틱, 추가 설명 금지.
             """;
 
-    private static final int MAX_CHUNK_PREVIEW_CHARS = 400;
+    private static final int MAX_CHUNK_PREVIEW_CHARS = 1000;
 
     private PromptBuilder() {
     }

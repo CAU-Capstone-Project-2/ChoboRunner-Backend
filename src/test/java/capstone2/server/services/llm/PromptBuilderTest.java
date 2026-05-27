@@ -46,7 +46,7 @@ class PromptBuilderTest {
 
     @Test
     void normalizesWhitespaceAndTrimsLongChunks() {
-        String longText = " 한국어\n   참고 지침 ".repeat(80);
+        String longText = " 한국어\n   참고 지침 ".repeat(200);
         RagChunk c = chunk("long", longText);
         RagContext ctx = new RagContext(Map.of(PostureMetric.TRUNK_LEAN, List.of(c)));
 
