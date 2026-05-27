@@ -39,6 +39,16 @@ def _get_index():
     return _index
 
 
+def reset_namespace(namespace: str = DEFAULT_NAMESPACE) -> None:
+    """namespace 의 모든 벡터를 삭제. 인덱스/네임스페이스 미존재는 무시."""
+    index = _get_index()
+    try:
+        index.delete(delete_all=True, namespace=namespace)
+        log.info("namespace '%s' 전체 삭제 완료", namespace)
+    except Exception as e:  # noqa: BLE001
+        log.warning("namespace '%s' 삭제 실패 (없는 namespace 일 수 있음): %s", namespace, e)
+
+
 def upsert(vectors: Iterable[dict], namespace: str = DEFAULT_NAMESPACE) -> int:
     """vectors: [{id, values, metadata}, ...]. 반환: upsert 한 벡터 수."""
     index = _get_index()

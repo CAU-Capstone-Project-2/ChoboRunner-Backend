@@ -20,7 +20,7 @@ from pypdf import PdfReader
 
 from .chunk import Chunk, chunk_text
 from .embed import embed_batch
-from .upsert import DEFAULT_NAMESPACE, upsert
+from .upsert import DEFAULT_NAMESPACE, reset_namespace, upsert
 
 log = logging.getLogger("rag_indexer.main")
 
@@ -113,12 +113,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tier", choices=["t1", "t2", "all"], default="all")
     parser.add_argument("--namespace", default=DEFAULT_NAMESPACE)
+    parser.add_argument("--reset", action="store_true",
+                        help="upsert 전에 namespace 의 기존 벡터를 모두 삭제")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+
+    if args.reset:
+        log.info("=== namespace '%s' reset ===", args.namespace)
+        reset_namespace(args.namespace)
 
     total = 0
     if args.tier in {"t1", "all"}:
