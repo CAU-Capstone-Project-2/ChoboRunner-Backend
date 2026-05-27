@@ -34,12 +34,16 @@ public class PostureRagRetriever {
 
     private final PostureEmbeddingClient embeddingClient;
     private final PineconeClient pineconeClient;
+    private final PostureHyDEGenerator hydeGenerator;
 
     @Value("${posture.rag.enabled:false}")
     private boolean enabled;
 
     @Value("${posture.rag.top-k:4}")
     private int topK;
+
+    @Value("${posture.rag.hyde-enabled:false}")
+    private boolean hydeEnabled;
 
     /**
      * @param views v3 metric 뷰
@@ -61,7 +65,7 @@ public class PostureRagRetriever {
             if (!needsRetrieval(view)) {
                 continue;
             }
-            String query = buildQuery(view);
+            String query = resolveEmbeddingInput(view);
             log.debug("RAG query metric={} text={}", view.metric().type(), query);
             float[] vec = embeddingClient.embed(query);
             if (vec == null) {
@@ -93,6 +97,21 @@ public class PostureRagRetriever {
             return view.status() != null && !view.status().isBlank();
         }
         return "주의".equals(view.status());
+    }
+
+    /**
+     * 임베딩 입력 결정. hyde-enabled 이면 HyDE 패시지 우선, 실패/비활성 시 자연어 쿼리로 fallback.
+     */
+    private String resolveEmbeddingInput(PostureMetricView view) {
+        if (hydeEnabled && hydeGenerator != null && hydeGenerator.isEnabled()) {
+            String hyde = hydeGenerator.generate(view);
+            if (hyde != null && !hyde.isBlank()) {
+                log.debug("RAG: HyDE 패시지 사용 metric={}, length={}", view.metric().type(), hyde.length());
+                return hyde;
+            }
+            log.debug("RAG: HyDE 생성 실패 → 자연어 쿼리로 fallback metric={}", view.metric().type());
+        }
+        return buildQuery(view);
     }
 
     /**
