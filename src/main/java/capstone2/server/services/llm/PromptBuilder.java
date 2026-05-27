@@ -1,7 +1,10 @@
 package capstone2.server.services.llm;
 
 import capstone2.server.dto.PoseAnalysisInput;
+import capstone2.server.services.posture.PostureMetric;
 import capstone2.server.services.posture.PostureMetricView;
+import capstone2.server.services.rag.RagChunk;
+import capstone2.server.services.rag.RagContext;
 
 import java.util.List;
 
@@ -24,14 +27,28 @@ public final class PromptBuilder {
             - lowConfidence=true 이면 단정 대신 "측면 전신이 잘 보이도록 다시 촬영하면 더
               정확한 분석이 가능합니다" 톤으로 안내한다
 
+            [참고 지침 활용]
+            - "[참고 지침]" 섹션이 있으면 출처로만 활용하고 본문을 그대로 옮기지 말고 코치 톤으로 재구성한다
+            - 참고 지침이 비어 있으면 일반적인 코치 톤 권고로 응답한다
+            - 참고 지침에 의학적 표현이 섞여 있어도 진단/처방 톤으로 재서술하지 말고 운동 자세 관점으로만 활용한다
+            - 참고 지침에 데이터가 없는 부위는 여전히 추측 금지
+
             [출력 형식]
             지정된 JSON 스키마로만 응답한다. 마크다운, 백틱, 추가 설명 금지.
             """;
+
+    private static final int MAX_CHUNK_PREVIEW_CHARS = 400;
 
     private PromptBuilder() {
     }
 
     public static String buildUserPrompt(List<PostureMetricView> views, PoseAnalysisInput input) {
+        return buildUserPrompt(views, input, RagContext.empty());
+    }
+
+    public static String buildUserPrompt(List<PostureMetricView> views,
+                                         PoseAnalysisInput input,
+                                         RagContext ragContext) {
         boolean lowConfidence = "low_confidence".equals(input.status());
         StringBuilder sb = new StringBuilder();
         sb.append("다음은 러닝 측면 영상 자세 분석 결과다.\n\n");
@@ -53,6 +70,8 @@ public final class PromptBuilder {
             sb.append("  aiFeedback: ").append(joinAiTexts(v.aiTexts())).append('\n');
         }
 
+        appendRagSection(sb, views, ragContext);
+
         sb.append("""
 
                 다음 JSON 스키마로만 응답하라:
@@ -64,6 +83,31 @@ public final class PromptBuilder {
                 }
                 """);
         return sb.toString();
+    }
+
+    private static void appendRagSection(StringBuilder sb,
+                                         List<PostureMetricView> views,
+                                         RagContext ragContext) {
+        if (ragContext == null || ragContext.isEmpty()) {
+            return;
+        }
+        sb.append("\n[참고 지침]\n");
+        for (PostureMetricView view : views) {
+            PostureMetric metric = view.metric();
+            List<RagChunk> chunks = ragContext.chunksFor(metric);
+            if (chunks.isEmpty()) continue;
+            sb.append('(').append(metric.type()).append(")\n");
+            for (RagChunk c : chunks) {
+                sb.append("- ").append(truncate(c.text())).append('\n');
+            }
+        }
+    }
+
+    private static String truncate(String text) {
+        if (text == null) return "";
+        String clean = text.replaceAll("\\s+", " ").trim();
+        if (clean.length() <= MAX_CHUNK_PREVIEW_CHARS) return clean;
+        return clean.substring(0, MAX_CHUNK_PREVIEW_CHARS) + "…";
     }
 
     private static boolean isFootStrike(PostureMetricView v) {

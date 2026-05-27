@@ -4,6 +4,8 @@ import capstone2.server.dto.LlmResponseDto;
 import capstone2.server.dto.PoseAnalysisInput;
 import capstone2.server.services.llm.LlmOutputSanitizer;
 import capstone2.server.services.llm.PostureLlmClient;
+import capstone2.server.services.rag.PostureRagRetriever;
+import capstone2.server.services.rag.RagContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
@@ -50,6 +52,7 @@ public class PostureResultService {
     private final PostureLlmClient llmClient;
     private final LlmOutputSanitizer sanitizer;
     private final PostureAnalysisPersister persister;
+    private final PostureRagRetriever ragRetriever;
 
     /**
      * WebSocket 텍스트 메시지를 수신한다. {@code analysis_result} 가 아닌 메시지는 무시한다.
@@ -92,11 +95,18 @@ public class PostureResultService {
         List<PostureMetricView> views = buildViews(input);
 
         try {
-            LlmResponseDto raw = llmClient.generate(views, input);
+            RagContext ragContext;
+            try {
+                ragContext = ragRetriever.retrieve(views, input);
+            } catch (Exception e) {
+                log.warn("RAG retrieve 실패, 컨텍스트 없이 진행: runId={}", runId, e);
+                ragContext = RagContext.empty();
+            }
+            LlmResponseDto raw = llmClient.generate(views, input, ragContext);
             LlmResponseDto llm = sanitizer.sanitize(raw, views, lowConfidence);
             Long reportId = persister.persist(runId, views, llm);
-            log.info("Posture analysis 완료: runId={}, reportId={}, status={}",
-                    runId, reportId, input.status());
+            log.info("Posture analysis 완료: runId={}, reportId={}, status={}, ragHits={}",
+                    runId, reportId, input.status(), ragHitCount(ragContext));
         } catch (Exception e) {
             log.error("Posture analysis 처리 실패: runId={}", runId, e);
         }
@@ -141,6 +151,15 @@ public class PostureResultService {
             status = hasWarning ? "주의" : "정상";
         }
         return new PostureMetricView(metric, measured, status, aiTexts);
+    }
+
+    private int ragHitCount(RagContext ctx) {
+        if (ctx == null || ctx.byMetric() == null) return 0;
+        int n = 0;
+        for (var list : ctx.byMetric().values()) {
+            if (list != null) n += list.size();
+        }
+        return n;
     }
 
     @PreDestroy
