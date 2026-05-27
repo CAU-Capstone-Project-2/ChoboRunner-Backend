@@ -1,0 +1,14 @@
+.env
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+
+# 코퍼스 본문(저작권/라이선스 이슈)은 추적하지 않고 디렉터리 구조만 유지
+corpus/t1-public/*
+!corpus/t1-public/.gitkeep
+corpus/t2-oa/*
+!corpus/t2-oa/.gitkeep

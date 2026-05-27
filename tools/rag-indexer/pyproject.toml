@@ -1,0 +1,21 @@
+[project]
+name = "rag-indexer"
+version = "0.1.0"
+description = "Posture RAG corpus indexer (OpenAlex -> Europe PMC/Unpaywall -> OpenAI embeddings -> Pinecone)"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.50.0",
+    "pinecone>=5.0.0",
+    "httpx>=0.27.0",
+    "pypdf>=4.0.0",
+    "lxml>=5.0.0",
+    "tiktoken>=0.7.0",
+    "python-dotenv>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rag_indexer"]
