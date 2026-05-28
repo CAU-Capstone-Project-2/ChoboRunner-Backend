@@ -69,9 +69,6 @@ class PostureRagSmokeTest {
         List<RagChunk> trunk = ctx.chunksFor(PostureMetric.TRUNK_LEAN);
         assertThat(trunk).as("trunk_lean 검색 결과").isNotEmpty();
         assertThat(trunk.get(0).text()).as("trunk_lean 첫 chunk 본문").isNotBlank();
-        assertThat(trunk).extracting(RagChunk::tone)
-                .as("trunk_lean tone 은 coaching 만 (clinical 필터)")
-                .allMatch("coaching"::equals);
         assertThat(trunk).extracting(RagChunk::category)
                 .as("trunk_lean category 는 trunk_lean 또는 general")
                 .allMatch(c -> "trunk_lean".equals(c) || "general".equals(c));
@@ -87,6 +84,31 @@ class PostureRagSmokeTest {
         assertThat(ctx.chunksFor(PostureMetric.INITIAL_KNEE_FLEXION))
                 .as("정상 metric 은 retrieve 스킵")
                 .isEmpty();
+    }
+
+    @Test
+    void retrievesChunksForKneeFlexionAttention() {
+        // initial_knee_flexion 단독 "주의" 시나리오. 다른 metric 은 "정상"/skip.
+        List<PostureMetricView> views = List.of(
+                new PostureMetricView(PostureMetric.TRUNK_LEAN, "6.0", "정상", List.of()),
+                new PostureMetricView(PostureMetric.INITIAL_KNEE_FLEXION, "12.0", "주의",
+                        List.of("착지 시 무릎 굽힘이 부족합니다")),
+                new PostureMetricView(PostureMetric.FOOT_STRIKE_PATTERN, "", "", List.of())
+        );
+        PoseAnalysisInput input = new PoseAnalysisInput(
+                "analysis_result", "success", null, "left",
+                null, null, null,
+                "primary_reason", List.of("rc_knee"), null, List.of()
+        );
+
+        RagContext ctx = retriever.retrieve(views, input);
+        logContext(ctx);
+
+        List<RagChunk> knee = ctx.chunksFor(PostureMetric.INITIAL_KNEE_FLEXION);
+        assertThat(knee).as("initial_knee_flexion 검색 결과").isNotEmpty();
+        assertThat(knee).extracting(RagChunk::category)
+                .as("knee category 는 initial_knee_flexion 또는 general")
+                .allMatch(c -> "initial_knee_flexion".equals(c) || "general".equals(c));
     }
 
     private void logContext(RagContext ctx) {

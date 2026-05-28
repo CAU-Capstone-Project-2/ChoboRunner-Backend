@@ -41,4 +41,9 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// RAG 스모크 IT 가 필요로 하는 외부 키/가드는 부모 셸에서 받아 테스트 JVM 으로 전달.
+	['POSTURE_RAG_IT', 'POSTURE_RAG_HYDE_ENABLED', 'OPENAI_API_KEY', 'PINECONE_API_KEY', 'PINECONE_INDEX_HOST'].each { name ->
+		def v = System.getenv(name)
+		if (v) environment name, v
+	}
 }

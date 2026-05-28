@@ -41,6 +41,7 @@ class Chunk:
     text: str
     tone: str  # "coaching" | "clinical"
     index: int
+    category: str | None = None  # 청크별 LLM 분류 결과 (None 이면 paper-level 사용)
 
 
 def _split_paragraphs(text: str) -> list[str]:

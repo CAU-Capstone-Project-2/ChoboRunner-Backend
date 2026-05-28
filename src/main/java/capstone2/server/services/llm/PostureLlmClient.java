@@ -28,13 +28,13 @@ public class PostureLlmClient {
     private final WebClient webClient;
     private final ObjectMapper mapper = new ObjectMapper();
     private final String model;
-    private final double temperature;
+    private final String reasoningEffort;
     private final Duration timeout;
     private final boolean enabled;
 
     public PostureLlmClient(@Value("${spring.ai.openai.api-key:}") String apiKey,
-                            @Value("${spring.ai.openai.chat.options.model:gpt-4o-mini}") String model,
-                            @Value("${spring.ai.openai.chat.options.temperature:0.3}") double temperature,
+                            @Value("${spring.ai.openai.chat.options.model:gpt-5.5}") String model,
+                            @Value("${posture.llm.reasoning-effort:medium}") String reasoningEffort,
                             @Value("${posture.llm.timeout-seconds:30}") long timeoutSeconds) {
         String trimmedKey = apiKey == null ? "" : apiKey.trim();
         this.enabled = !trimmedKey.isEmpty() && !trimmedKey.startsWith("${");
@@ -44,7 +44,7 @@ public class PostureLlmClient {
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
         this.model = model;
-        this.temperature = temperature;
+        this.reasoningEffort = (reasoningEffort == null || reasoningEffort.isBlank()) ? null : reasoningEffort.trim();
         this.timeout = Duration.ofSeconds(timeoutSeconds);
 
         if (enabled) {
@@ -82,15 +82,16 @@ public class PostureLlmClient {
 
         String userPrompt = PromptBuilder.buildUserPrompt(views, input, ragContext);
 
-        Map<String, Object> body = Map.of(
-                "model", model,
-                "temperature", temperature,
-                "response_format", Map.of("type", "json_object"),
-                "messages", List.of(
-                        Map.of("role", "system", "content", PromptBuilder.SYSTEM_PROMPT),
-                        Map.of("role", "user", "content", userPrompt)
-                )
-        );
+        java.util.LinkedHashMap<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("model", model);
+        body.put("response_format", Map.of("type", "json_object"));
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", PromptBuilder.SYSTEM_PROMPT),
+                Map.of("role", "user", "content", userPrompt)
+        ));
+        if (reasoningEffort != null) {
+            body.put("reasoning_effort", reasoningEffort);
+        }
 
         try {
             String rawBody = webClient.post()

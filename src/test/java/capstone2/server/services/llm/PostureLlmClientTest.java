@@ -14,25 +14,25 @@ class PostureLlmClientTest {
     @NullAndEmptySource
     @ValueSource(strings = {"   ", "\t"})
     void enabledIsFalseForMissingOrBlankKey(String key) {
-        var client = new PostureLlmClient(key, "gpt-4o-mini", 0.3, 30);
+        var client = new PostureLlmClient(key, "gpt-5.5", "medium", 30);
         assertThat(client.isEnabled()).isFalse();
     }
 
     @Test
     void enabledIsFalseForUnresolvedPlaceholder() {
-        var client = new PostureLlmClient("${OPENAI_API_KEY:}", "gpt-4o-mini", 0.3, 30);
+        var client = new PostureLlmClient("${OPENAI_API_KEY:}", "gpt-5.5", "medium", 30);
         assertThat(client.isEnabled()).isFalse();
     }
 
     @Test
     void enabledIsTrueForValidKey() {
-        var client = new PostureLlmClient("sk-real-secret-1234567890", "gpt-4o-mini", 0.3, 30);
+        var client = new PostureLlmClient("sk-real-secret-1234567890", "gpt-5.5", "medium", 30);
         assertThat(client.isEnabled()).isTrue();
     }
 
     @Test
     void enabledIsTrueAfterTrimmingWhitespaceAroundValidKey() {
-        var client = new PostureLlmClient("  sk-real-key-9876543210  ", "gpt-4o-mini", 0.3, 30);
+        var client = new PostureLlmClient("  sk-real-key-9876543210  ", "gpt-5.5", "medium", 30);
         assertThat(client.isEnabled()).isTrue();
     }
 

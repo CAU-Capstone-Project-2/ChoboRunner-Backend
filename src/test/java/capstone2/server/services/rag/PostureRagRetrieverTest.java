@@ -25,19 +25,23 @@ class PostureRagRetrieverTest {
 
     private PostureEmbeddingClient embeddingClient;
     private PineconeClient pineconeClient;
+    private PostureHyDEGenerator hydeGenerator;
     private PostureRagRetriever retriever;
 
     @BeforeEach
     void setUp() {
         embeddingClient = mock(PostureEmbeddingClient.class);
         pineconeClient = mock(PineconeClient.class);
+        hydeGenerator = mock(PostureHyDEGenerator.class);
         when(embeddingClient.isEnabled()).thenReturn(true);
         when(pineconeClient.isEnabled()).thenReturn(true);
+        when(hydeGenerator.isEnabled()).thenReturn(false);
         when(embeddingClient.embed(anyString())).thenReturn(new float[]{0.1f, 0.2f, 0.3f});
 
-        retriever = new PostureRagRetriever(embeddingClient, pineconeClient);
+        retriever = new PostureRagRetriever(embeddingClient, pineconeClient, hydeGenerator);
         ReflectionTestUtils.setField(retriever, "enabled", true);
         ReflectionTestUtils.setField(retriever, "topK", 4);
+        ReflectionTestUtils.setField(retriever, "hydeEnabled", false);
     }
 
     @Test
@@ -96,7 +100,7 @@ class PostureRagRetrieverTest {
     }
 
     @Test
-    void appliesCoachingToneAndCategoryFilter() {
+    void appliesCategoryFilterOnly() {
         when(pineconeClient.query(any(), anyInt(), any())).thenReturn(List.of());
 
         retriever.retrieve(List.of(view(PostureMetric.TRUNK_LEAN, "주의")), input());
@@ -104,7 +108,7 @@ class PostureRagRetrieverTest {
         ArgumentCaptor<Map<String, Object>> filterCap = ArgumentCaptor.forClass(Map.class);
         verify(pineconeClient).query(any(), anyInt(), filterCap.capture());
         Map<String, Object> filter = filterCap.getValue();
-        assertThat(filter).containsEntry("tone", Map.of("$eq", "coaching"));
+        assertThat(filter).doesNotContainKey("tone");
         assertThat(filter).containsEntry("category",
                 Map.of("$in", List.of("trunk_lean", "general")));
     }
