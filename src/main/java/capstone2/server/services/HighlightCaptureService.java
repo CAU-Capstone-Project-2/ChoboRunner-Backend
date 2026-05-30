@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -105,6 +106,8 @@ public class HighlightCaptureService {
             }
         }
 
+        List<OpenHighlight> toPersist = new ArrayList<>();
+
         for (AiProgressMessage.FeedbackMessage fb : warnings) {
             String metric = fb.getMetric();
             String text = fb.getDisplayText();
@@ -117,22 +120,42 @@ public class HighlightCaptureService {
                 scheduleGc(sessionId, metric, open);
 
             } else if (existing.message.equals(text)) {
-                // 동일 경고 지속: gc 재스케줄하여 gap 초기화
+                // 동일 경고 지속: gc 재스케줄하여 gap 초기화, end-padding 갱신
                 existing.gcTask.cancel(false);
-                existing.lastSeenSec = elapsedSec;
+                existing.lastSeenSec = elapsedSec + minHighlightSec;
                 scheduleGc(sessionId, metric, existing);
 
             } else {
                 // 메시지 변경: 이전 하이라이트 즉시 닫고 새로 시작
                 existing.gcTask.cancel(false);
+                toPersist.add(existing);
                 opens.remove(metric);
-                persistOpen(existing);
                 OpenHighlight open = new OpenHighlight(runId, metric, text, elapsedSec);
                 opens.put(metric, open);
                 scheduleGc(sessionId, metric, open);
             }
         }
-        // gap 체크는 scheduleGc 가 담당 — 명시적 루프 불필요
+
+        // 명시적 gap 체크: 새 메시지 도착 시 오래된 하이라이트 즉시 닫음 (mid-run 대응)
+        // gc 타이머는 메시지가 더 이상 오지 않는 end-of-run 케이스를 담당
+        Iterator<Map.Entry<String, OpenHighlight>> it = opens.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, OpenHighlight> entry = it.next();
+            OpenHighlight open = entry.getValue();
+            if (elapsedSec - open.lastSeenSec > gapThresholdSec) {
+                if (open.gcTask != null) open.gcTask.cancel(false);
+                toPersist.add(open);
+                it.remove();
+            }
+        }
+
+        if (toPersist.isEmpty()) return;
+
+        RunSession session = runSessionRepository.findById(runId).orElse(null);
+        if (session == null) return;
+        for (OpenHighlight open : toPersist) {
+            persist(session, open);
+        }
     }
 
     /**
