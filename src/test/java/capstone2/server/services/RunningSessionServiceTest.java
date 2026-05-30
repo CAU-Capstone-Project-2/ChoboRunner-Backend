@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -131,14 +132,26 @@ class RunningSessionServiceTest {
 
     @Test
     void updateVideoS3KeyOnlyChangesKey() {
-        RunSession existing = sampleEntity(5L, 1L);
-        when(repo.findById(5L)).thenReturn(Optional.of(existing));
-        when(repo.save(any(RunSession.class))).thenAnswer(inv -> inv.getArgument(0));
+        RunSession updated = sampleEntity(5L, 1L);
+        updated.setVideoS3Key("video/new.mp4");
+        when(repo.updateVideoS3Key(5L, "video/new.mp4")).thenReturn(1);
+        when(repo.findById(5L)).thenReturn(Optional.of(updated));
 
-        RunSessionDto result = service.updateVideoS3Key(5L, "video/new.mp4");
+        Optional<RunSessionDto> result = service.updateVideoS3Key(5L, "video/new.mp4");
 
-        assertThat(result.getVideoS3Key()).isEqualTo("video/new.mp4");
-        assertThat(result.getMode()).isEqualTo("OUTDOOR");
+        assertThat(result).isPresent();
+        assertThat(result.get().getVideoS3Key()).isEqualTo("video/new.mp4");
+        assertThat(result.get().getMode()).isEqualTo("OUTDOOR");
+    }
+
+    @Test
+    void updateVideoS3KeyReturnsEmptyWhenRunDeleted() {
+        when(repo.updateVideoS3Key(5L, "video/new.mp4")).thenReturn(0);
+
+        Optional<RunSessionDto> result = service.updateVideoS3Key(5L, "video/new.mp4");
+
+        assertThat(result).isEmpty();
+        verify(repo, never()).findById(5L);
     }
 
     @Test
