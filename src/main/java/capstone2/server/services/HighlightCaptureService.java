@@ -20,6 +20,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -36,8 +39,17 @@ public class HighlightCaptureService {
     private double startPaddingSec;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /** 상태 변경 · 영속화의 단일 진입점 — 모든 openBySession 접근은 이 스레드에서만 */
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "highlight-capture");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /** gapThresholdSec 경과 후 gcClose 를 worker 에 위임 */
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "highlight-gc");
         t.setDaemon(true);
         return t;
     });
@@ -48,31 +60,27 @@ public class HighlightCaptureService {
     private final Map<String, Map<String, OpenHighlight>> openBySession = new ConcurrentHashMap<>();
 
     public void onMessage(String sessionId, Long runId, String payload) {
-        if (sessionId == null || runId == null || payload == null || payload.isEmpty()) {
-            return;
-        }
+        if (sessionId == null || runId == null || payload == null || payload.isEmpty()) return;
         worker.execute(() -> handle(sessionId, runId, payload));
     }
 
+    /** 세션 종료 시 아직 닫히지 않은 하이라이트를 플러시한다 (안전망). */
     public void flushAll(String sessionId) {
-        if (sessionId == null) {
-            return;
-        }
+        if (sessionId == null) return;
         worker.execute(() -> {
             Map<String, OpenHighlight> opens = openBySession.remove(sessionId);
-            if (opens == null || opens.isEmpty()) {
-                return;
-            }
+            if (opens == null || opens.isEmpty()) return;
             Long runId = opens.values().iterator().next().runId;
             RunSession session = runSessionRepository.findById(runId).orElse(null);
-            if (session == null) {
-                return;
-            }
+            if (session == null) return;
             for (OpenHighlight open : opens.values()) {
+                if (open.gcTask != null) open.gcTask.cancel(false);
                 persist(session, open);
             }
         });
     }
+
+    // ── 내부 로직 ───────────────────────────────────────────────────────────────
 
     private void handle(String sessionId, Long runId, String payload) {
         AiProgressMessage msg;
@@ -81,14 +89,10 @@ public class HighlightCaptureService {
         } catch (Exception e) {
             return;
         }
-
-        if (!PROGRESS_TYPE.equals(msg.getType()) || msg.getElapsedSec() == null) {
-            return;
-        }
+        if (!PROGRESS_TYPE.equals(msg.getType()) || msg.getElapsedSec() == null) return;
 
         double elapsedSec = msg.getElapsedSec();
-        Map<String, OpenHighlight> opens =
-                openBySession.computeIfAbsent(sessionId, k -> new HashMap<>());
+        Map<String, OpenHighlight> opens = openBySession.computeIfAbsent(sessionId, k -> new HashMap<>());
 
         List<AiProgressMessage.FeedbackMessage> warnings = new ArrayList<>();
         if (msg.getFeedbackMessages() != null) {
@@ -108,37 +112,79 @@ public class HighlightCaptureService {
             String metric = fb.getMetric();
             String text = fb.getDisplayText();
             OpenHighlight existing = opens.get(metric);
+
             if (existing == null) {
-                opens.put(metric, new OpenHighlight(runId, metric, text, elapsedSec));
+                // 새 경고 시작
+                OpenHighlight open = new OpenHighlight(runId, metric, text, elapsedSec);
+                opens.put(metric, open);
+                scheduleGc(sessionId, metric, open);
+
             } else if (existing.message.equals(text)) {
+                // 동일 경고 지속: gc 재스케줄하여 gap 초기화, end-padding 갱신
+                existing.gcTask.cancel(false);
                 existing.lastSeenSec = elapsedSec + minHighlightSec;
+                scheduleGc(sessionId, metric, existing);
+
             } else {
+                // 메시지 변경: 이전 하이라이트 즉시 닫고 새로 시작
+                existing.gcTask.cancel(false);
                 toPersist.add(existing);
-                opens.put(metric, new OpenHighlight(runId, metric, text, elapsedSec));
+                opens.remove(metric);
+                OpenHighlight open = new OpenHighlight(runId, metric, text, elapsedSec);
+                opens.put(metric, open);
+                scheduleGc(sessionId, metric, open);
             }
         }
 
+        // 명시적 gap 체크: 새 메시지 도착 시 오래된 하이라이트 즉시 닫음 (mid-run 대응)
+        // gc 타이머는 메시지가 더 이상 오지 않는 end-of-run 케이스를 담당
         Iterator<Map.Entry<String, OpenHighlight>> it = opens.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, OpenHighlight> entry = it.next();
             OpenHighlight open = entry.getValue();
             if (elapsedSec - open.lastSeenSec > gapThresholdSec) {
+                if (open.gcTask != null) open.gcTask.cancel(false);
                 toPersist.add(open);
                 it.remove();
             }
         }
 
-        if (toPersist.isEmpty()) {
-            return;
-        }
+        if (toPersist.isEmpty()) return;
 
         RunSession session = runSessionRepository.findById(runId).orElse(null);
-        if (session == null) {
-            return;
-        }
+        if (session == null) return;
         for (OpenHighlight open : toPersist) {
             persist(session, open);
         }
+    }
+
+    /**
+     * gapThresholdSec 후 worker 에서 gcClose 를 실행한다.
+     * gcVersion 으로 재스케줄 이전의 stale close 를 방지한다.
+     */
+    private void scheduleGc(String sessionId, String metric, OpenHighlight open) {
+        int version = ++open.gcVersion;
+        long delayMs = (long)(gapThresholdSec * 1000);
+        open.gcTask = scheduler.schedule(
+            () -> worker.execute(() -> gcClose(sessionId, metric, open, version)),
+            delayMs, TimeUnit.MILLISECONDS
+        );
+    }
+
+    private void gcClose(String sessionId, String metric, OpenHighlight open, int version) {
+        Map<String, OpenHighlight> opens = openBySession.get(sessionId);
+        if (opens == null) return;
+        // 다른 highlight 로 교체됐거나 재스케줄된 경우 무시
+        if (opens.get(metric) != open || open.gcVersion != version) return;
+        opens.remove(metric);
+        if (opens.isEmpty()) openBySession.remove(sessionId);
+        persistOpen(open);
+    }
+
+    private void persistOpen(OpenHighlight open) {
+        RunSession session = runSessionRepository.findById(open.runId).orElse(null);
+        if (session == null) return;
+        persist(session, open);
     }
 
     private void persist(RunSession session, OpenHighlight open) {
@@ -161,7 +207,6 @@ public class HighlightCaptureService {
         }
     }
 
-
     private static LocalTime toLocalTime(double seconds) {
         long ms = Math.max(0, Math.round(seconds * 1000.0));
         return LocalTime.ofNanoOfDay(ms * 1_000_000L);
@@ -175,6 +220,7 @@ public class HighlightCaptureService {
     @PreDestroy
     void shutdown() {
         worker.shutdown();
+        scheduler.shutdown();
     }
 
     private static class OpenHighlight {
@@ -183,6 +229,8 @@ public class HighlightCaptureService {
         final String message;
         final double startSec;
         double lastSeenSec;
+        int gcVersion = 0;
+        ScheduledFuture<?> gcTask;
 
         OpenHighlight(Long runId, String metric, String message, double elapsedSec) {
             this.runId = runId;

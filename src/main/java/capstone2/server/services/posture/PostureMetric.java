@@ -14,8 +14,8 @@ package capstone2.server.services.posture;
  */
 public enum PostureMetric {
 
-    TRUNK_LEAN("trunk_lean", "trunk_lean", "7.5", 5, 10, 2.0),
-    INITIAL_KNEE_FLEXION("initial_knee_flexion", "knee_flexion", "20.0", 15, 25, 2.0),
+    TRUNK_LEAN("trunk_lean", "trunk_lean", "7.5", 0, 15, 2.0),
+    INITIAL_KNEE_FLEXION("initial_knee_flexion", "knee_flexion", "25.0", 15, 35, 2.0),
     FOOT_STRIKE_PATTERN("foot_strike_pattern", "foot_strike", "0", 0, 0, 0.0);
 
     private final String type;
