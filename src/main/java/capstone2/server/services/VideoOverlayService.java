@@ -64,9 +64,16 @@ public class VideoOverlayService {
         }
 
         // 4. RunSession.videoS3Key 갱신 (트랜잭션)
-        RunSessionDto dto = runningSessionService.updateVideoS3Key(runSessionId, overlayKey);
+        //    처리 도중 run 이 삭제됐을 수 있다(클라이언트가 overlay 와 delete 를 동시에 보낸 경우).
+        Optional<RunSessionDto> dto = runningSessionService.updateVideoS3Key(runSessionId, overlayKey);
+        if (dto.isEmpty()) {
+            log.warn("오버레이 저장 대상 RunSession 없음(처리 중 삭제 추정): runSessionId={}", runSessionId);
+            return ResponseEntity.status(409)
+                    .body(Map.of("message", "해당 분석 세션이 종료/삭제되어 오버레이 결과를 저장할 수 없습니다.",
+                            "RunSessionId", runSessionId));
+        }
 
         // 5. 성공 응답
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(dto.get());
     }
 }

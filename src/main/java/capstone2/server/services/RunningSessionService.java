@@ -60,10 +60,13 @@ public class RunningSessionService {
     public Optional<RunSession> findById(Long runId) {
         return repo.findById(runId);}
 
-    /** 오버레이 완료 시 영상 S3 key만 갱신한다 (덮어쓰기). */
-    public RunSessionDto updateVideoS3Key(Long id, String videoS3Key) {
-        RunSession s = repo.findById(id).orElseThrow();
-        s.setVideoS3Key(videoS3Key);
-        return toDto(repo.save(s));
+    /**
+     * 오버레이 완료 시 영상 S3 key만 갱신한다 (덮어쓰기).
+     * 처리 도중 run 이 삭제됐으면 empty 를 반환한다(500 대신 호출부에서 명확히 처리).
+     */
+    public Optional<RunSessionDto> updateVideoS3Key(Long id, String videoS3Key) {
+        int updated = repo.updateVideoS3Key(id, videoS3Key);
+        if (updated == 0) return Optional.empty();
+        return repo.findById(id).map(this::toDto);
     }
 }
