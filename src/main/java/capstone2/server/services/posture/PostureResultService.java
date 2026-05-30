@@ -144,6 +144,11 @@ public class PostureResultService {
             }
         }
 
+        if (!hasWarning && value != null && metric.refMax() > 0
+                && (value > metric.refMax() || value < metric.refMin())) {
+            hasWarning = true;
+        }
+
         String status;
         if (metric == PostureMetric.FOOT_STRIKE_PATTERN) {
             status = (footPattern == null || footPattern.isBlank()) ? "정상" : footPattern;
