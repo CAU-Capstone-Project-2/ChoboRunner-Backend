@@ -115,9 +115,19 @@ public class DetailedReportService {
         if (refMin <= measuredAngle && measuredAngle <= refMax) return 100;
 
         double refVal = measuredAngle < refMin ? refMin : refMax;
-        if (refVal == 0) return null; // 분모 방지
+        // refVal이 0이면 상대오차 분모가 0이 되므로 기준값(stdVal)으로 정규화
+        // (예: trunk_lean refMin=0 에서 측정값이 마이너스인 경우)
+        double denom = refVal;
+        if (denom == 0) {
+            try {
+                denom = Double.parseDouble(d.getStdVal());
+            } catch (NumberFormatException | NullPointerException e) {
+                return null;
+            }
+            if (denom == 0) return null; // 분모 방지
+        }
 
-        double error = Math.abs((measuredAngle - refVal) / refVal);
+        double error = Math.abs((measuredAngle - refVal) / denom);
 
         System.out.println("E: " + error);
         // 오차가 5% 이하인 경우 보정
