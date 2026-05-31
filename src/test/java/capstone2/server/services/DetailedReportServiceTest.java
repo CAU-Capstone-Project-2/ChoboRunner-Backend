@@ -161,6 +161,26 @@ class DetailedReportServiceTest {
     }
 
     @Test
+    void createScoresNegativeMeasuredWhenRefMinZero() {
+        // trunk_lean: refMin=0, refMax=15, stdVal=7.5. 음수 측정값이 null이 아닌 점수를 내야 함.
+        Report ref = new Report(); ref.setId(1L);
+        when(em.getReference(eq(Report.class), eq(1L))).thenReturn(ref);
+        when(repo.save(any(DetailedReport.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        DetailedReportDto dto = baseDto();
+        dto.setStdVal("7.5");
+        dto.setRefMin(0);
+        dto.setRefMax(15);
+        dto.setMeasured("-3");
+        dto.setSensitivity(2.0);
+
+        DetailedReportDto result = service.create(dto);
+
+        assertThat(result.getScore()).isNotNull();
+        assertThat(result.getScore()).isLessThan(100).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
     void createReturnsNullScoreWhenMeasuredNull() {
         Report ref = new Report(); ref.setId(1L);
         when(em.getReference(eq(Report.class), eq(1L))).thenReturn(ref);
