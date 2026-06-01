@@ -39,7 +39,11 @@ public class RunningSessionService {
         s.setCreatedDate(dto.getCreatedDate());
         s.setMode(dto.getMode());
         s.setStatus(dto.getStatus());
-        s.setVideoS3Key(dto.getVideoS3Key());
+        // videoS3Key는 오버레이 플로우(updateVideoS3Key)가 전담한다.
+        // 일반 update 요청에 값이 없을 때 기존 키를 null로 덮어쓰지 않도록 보존.
+        if (dto.getVideoS3Key() != null) {
+            s.setVideoS3Key(dto.getVideoS3Key());
+        }
         s.setDuration(dto.getDuration());
         return toDto(repo.save(s));
     }

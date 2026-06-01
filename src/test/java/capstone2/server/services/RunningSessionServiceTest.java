@@ -131,6 +131,23 @@ class RunningSessionServiceTest {
     }
 
     @Test
+    void updatePreservesVideoS3KeyWhenDtoOmitsIt() {
+        // 오버레이가 저장해둔 키가, videoS3Key 없는 일반 PUT 업데이트로 null이 되면 안 됨.
+        RunSession existing = sampleEntity(5L, 1L); // videoS3Key="video/k.mp4"
+        when(repo.findById(5L)).thenReturn(Optional.of(existing));
+        when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(repo.save(any(RunSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RunSessionDto dto = sampleDto(1L);
+        dto.setVideoS3Key(null); // 클라이언트가 상태/duration만 갱신, 키 미포함
+        dto.setStatus("DONE");
+
+        RunSessionDto result = service.update(5L, dto);
+
+        assertThat(result.getVideoS3Key()).isEqualTo("video/k.mp4");
+    }
+
+    @Test
     void updateVideoS3KeyOnlyChangesKey() {
         RunSession updated = sampleEntity(5L, 1L);
         updated.setVideoS3Key("video/new.mp4");
