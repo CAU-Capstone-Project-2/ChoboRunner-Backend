@@ -148,6 +148,26 @@ class RunningSessionServiceTest {
     }
 
     @Test
+    void updatePreservesNullFieldsAndAppliesNonNull() {
+        // 일부 필드만 담긴 요청: null 필드는 보존, 값이 있는 필드만 갱신.
+        RunSession existing = sampleEntity(5L, 1L); // mode=OUTDOOR, status=DONE, duration=1800, key=video/k.mp4
+        when(repo.findById(5L)).thenReturn(Optional.of(existing));
+        when(repo.save(any(RunSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RunSessionDto dto = RunSessionDto.builder()
+                .status("PAUSED") // 이 필드만 갱신
+                .build();
+
+        RunSessionDto result = service.update(5L, dto);
+
+        assertThat(result.getStatus()).isEqualTo("PAUSED");
+        assertThat(result.getMode()).isEqualTo("OUTDOOR");
+        assertThat(result.getDuration()).isEqualTo(1800);
+        assertThat(result.getVideoS3Key()).isEqualTo("video/k.mp4");
+        assertThat(result.getUserId()).isEqualTo(1L);
+    }
+
+    @Test
     void updateVideoS3KeyOnlyChangesKey() {
         RunSession updated = sampleEntity(5L, 1L);
         updated.setVideoS3Key("video/new.mp4");

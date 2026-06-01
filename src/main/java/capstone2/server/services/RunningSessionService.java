@@ -35,16 +35,17 @@ public class RunningSessionService {
     public List<RunSessionDto> findByUserIdDto(Long userId){ return repo.findByUserId(userId).stream().map(this::toDto).toList(); }
     public RunSessionDto update(Long id, RunSessionDto dto){
         RunSession s = repo.findById(id).orElseThrow();
-        s.setUser(userRepo.findById(dto.getUserId()).orElseThrow());
-        s.setCreatedDate(dto.getCreatedDate());
-        s.setMode(dto.getMode());
-        s.setStatus(dto.getStatus());
-        // videoS3Key는 오버레이 플로우(updateVideoS3Key)가 전담한다.
-        // 일반 update 요청에 값이 없을 때 기존 키를 null로 덮어쓰지 않도록 보존.
-        if (dto.getVideoS3Key() != null) {
-            s.setVideoS3Key(dto.getVideoS3Key());
+        // 부분 업데이트: null로 들어온 필드는 기존 값을 보존한다.
+        // (요청에 일부 필드만 담겨 와도 저장된 데이터가 null로 덮어써지지 않도록)
+        if (dto.getUserId() != null) {
+            s.setUser(userRepo.findById(dto.getUserId()).orElseThrow());
         }
-        s.setDuration(dto.getDuration());
+        if (dto.getCreatedDate() != null) s.setCreatedDate(dto.getCreatedDate());
+        if (dto.getMode() != null) s.setMode(dto.getMode());
+        if (dto.getStatus() != null) s.setStatus(dto.getStatus());
+        // videoS3Key는 오버레이 플로우(updateVideoS3Key)가 전담한다.
+        if (dto.getVideoS3Key() != null) s.setVideoS3Key(dto.getVideoS3Key());
+        if (dto.getDuration() != null) s.setDuration(dto.getDuration());
         return toDto(repo.save(s));
     }
     public void delete(Long id){ repo.deleteById(id); }
