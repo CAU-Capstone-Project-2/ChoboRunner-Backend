@@ -66,3 +66,4 @@ jobs:
             cd ~/spring                           # ← scale.sh 가 있는 EC2 디렉토리 경로로 수정하세요
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/capstone2-backend:latest
             ./scale.sh 2
+            docker image prune -f
