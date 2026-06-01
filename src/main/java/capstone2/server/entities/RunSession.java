@@ -4,10 +4,14 @@ package capstone2.server.entities;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.DynamicUpdate;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "RUN_SESSION")
+// 변경된 컬럼만 UPDATE 한다. PUT(전체 수정)과 videoS3Key 부분 갱신이 동시에 일어날 때
+// 손대지 않은 videoS3Key가 stale 값으로 덮어써지는 lost update를 막는다.
+@DynamicUpdate
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
