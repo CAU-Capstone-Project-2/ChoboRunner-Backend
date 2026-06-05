@@ -44,7 +44,8 @@ public class RunningSessionService {
         if (dto.getMode() != null) s.setMode(dto.getMode());
         if (dto.getStatus() != null) s.setStatus(dto.getStatus());
         // videoS3Key는 오버레이 플로우(updateVideoS3Key)가 전담한다.
-        if (dto.getVideoS3Key() != null) s.setVideoS3Key(dto.getVideoS3Key());
+        // PUT 으로는 절대 갱신하지 않는다 — 클라이언트가 값을 실어 보내도(빈 문자열 포함)
+        // 오버레이가 저장한 키를 덮어쓰지 못하게 PUT 에서 완전히 무시한다.
         if (dto.getDuration() != null) s.setDuration(dto.getDuration());
         return toDto(repo.save(s));
     }

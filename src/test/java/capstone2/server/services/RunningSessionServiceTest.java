@@ -148,6 +148,23 @@ class RunningSessionServiceTest {
     }
 
     @Test
+    void updateIgnoresVideoS3KeyEvenWhenDtoProvidesOne() {
+        // PUT 은 videoS3Key 를 절대 반영하지 않는다 — 오버레이가 저장한 키를
+        // 클라이언트가 보낸 값(빈 문자열 포함)으로 덮어쓰면 안 됨.
+        RunSession existing = sampleEntity(5L, 1L); // videoS3Key="video/k.mp4"
+        when(repo.findById(5L)).thenReturn(Optional.of(existing));
+        when(userRepo.findById(1L)).thenReturn(Optional.of(user(1L)));
+        when(repo.save(any(RunSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        RunSessionDto dto = sampleDto(1L);
+        dto.setVideoS3Key("video/CLIENT_OVERWRITE.mp4"); // 클라이언트가 키를 실어 보냄
+
+        RunSessionDto result = service.update(5L, dto);
+
+        assertThat(result.getVideoS3Key()).isEqualTo("video/k.mp4");
+    }
+
+    @Test
     void updatePreservesNullFieldsAndAppliesNonNull() {
         // 일부 필드만 담긴 요청: null 필드는 보존, 값이 있는 필드만 갱신.
         RunSession existing = sampleEntity(5L, 1L); // mode=OUTDOOR, status=DONE, duration=1800, key=video/k.mp4
